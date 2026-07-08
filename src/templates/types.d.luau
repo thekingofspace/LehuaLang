@@ -11,6 +11,15 @@ export type Port = {
     IsClosed: (self: Port) -> boolean,
 }
 
+export type Metadata = {
+    type: "file" | "dir" | "other",
+    size: number,
+    readonly: boolean,
+    modifiedAt: number?,
+    createdAt: number?,
+    accessedAt: number?,
+}
+
 export type FileHandle = {
     read: (self: FileHandle, fmt: (number | string)?) -> (string | number)?,
     write: (self: FileHandle, ...string | number) -> (),
@@ -33,6 +42,7 @@ export type FS = {
     exists: (path: string) -> boolean,
     isFile: (path: string) -> boolean,
     isDir: (path: string) -> boolean,
+    metadata: (path: string) -> Metadata,
     read: (path: string) -> string,
     write: (path: string, data: string) -> (),
     append: (path: string, data: string) -> (),

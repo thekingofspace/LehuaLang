@@ -79,6 +79,26 @@ print(fs.extname("a/b/c.txt"))      -- .txt</code></pre></div>
 </tbody>
 </table>
 
+<h2>Metadata</h2>
+<p><code>fs.metadata(path)</code> returns a table that describes a file or folder. It raises an error if the path does not exist.</p>
+<table>
+<thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>type</code></td><td><code>string</code></td><td><code>"file"</code>, <code>"dir"</code>, or <code>"other"</code>.</td></tr>
+<tr><td><code>size</code></td><td><code>number</code></td><td>The size in bytes. For folders this value is system dependent.</td></tr>
+<tr><td><code>readonly</code></td><td><code>boolean</code></td><td>True if the file cannot be written to.</td></tr>
+<tr><td><code>modifiedAt</code></td><td><code>number?</code></td><td>When it was last changed, in seconds since the Unix epoch.</td></tr>
+<tr><td><code>createdAt</code></td><td><code>number?</code></td><td>When it was made, in seconds since the Unix epoch.</td></tr>
+<tr><td><code>accessedAt</code></td><td><code>number?</code></td><td>When it was last read, in seconds since the Unix epoch.</td></tr>
+</tbody>
+</table>
+<p>The time fields can be missing on file systems that do not track them. They include fractions of a second, so pass them through <code>math.floor</code> before handing them to <code>os.date</code>.</p>
+<div class="codeblock"><div class="window-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="window-title">src/main.luau</span></div><pre><code class="language-luau">local meta = fs.metadata("./notes.txt")
+print(meta.type, meta.size)
+if meta.modifiedAt then
+    print("last changed " .. os.date("%Y-%m-%d %H:%M", math.floor(meta.modifiedAt)))
+end</code></pre></div>
+
 <h2>Reading and writing whole files</h2>
 <table>
 <thead><tr><th>Function</th><th>Returns</th><th>Description</th></tr></thead>

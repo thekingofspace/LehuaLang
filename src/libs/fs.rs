@@ -95,6 +95,38 @@ pub fn build(ctx: &LibCtx) -> mlua::Result<Value> {
     {
         let scope = scope.clone();
         t.set(
+            "metadata",
+            lua.create_function(move |lua, p: String| {
+                let full = scope.resolve(&p)?;
+                let meta = std::fs::metadata(&full).map_err(mlua::Error::external)?;
+                let out = lua.create_table()?;
+                let kind = if meta.is_dir() {
+                    "dir"
+                } else if meta.is_file() {
+                    "file"
+                } else {
+                    "other"
+                };
+                out.set("type", kind)?;
+                out.set("size", meta.len() as f64)?;
+                out.set("readonly", meta.permissions().readonly())?;
+                if let Ok(time) = meta.modified() {
+                    out.set("modifiedAt", unix_secs(time))?;
+                }
+                if let Ok(time) = meta.created() {
+                    out.set("createdAt", unix_secs(time))?;
+                }
+                if let Ok(time) = meta.accessed() {
+                    out.set("accessedAt", unix_secs(time))?;
+                }
+                Ok(out)
+            })?,
+        )?;
+    }
+
+    {
+        let scope = scope.clone();
+        t.set(
             "read",
             lua.create_function(move |lua, p: String| {
                 let full = scope.resolve(&p)?;
@@ -203,6 +235,12 @@ pub fn build(ctx: &LibCtx) -> mlua::Result<Value> {
     }
 
     Ok(Value::Table(t))
+}
+
+fn unix_secs(t: std::time::SystemTime) -> f64 {
+    t.duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs_f64())
+        .unwrap_or(0.0)
 }
 
 fn open_with_mode(path: &Path, mode: &str) -> std::io::Result<File> {
