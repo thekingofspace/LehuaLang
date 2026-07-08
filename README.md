@@ -7,20 +7,39 @@ It is written in Rust on top of mlua and tokio.
 
 ## Install
 
-You have two options. You can download a prebuilt program from the releases, or
-you can build it from source.
+You have three options. You can install it with Rokit, download a prebuilt
+program from the releases, or build it from source.
 
-### Option 1: Download a release
+### Option 1: Install with Rokit
+
+If you use [Rokit](https://github.com/rojo-rbx/rokit) to manage your tools,
+install Lehua with one command:
+
+```
+rokit add thekingofspace/LehuaLang lehua
+```
+
+The `lehua` at the end sets the name of the command. Without it, the command
+would be called `LehuaLang`.
+
+Run that inside a project to add Lehua to its `rokit.toml`, or add `--global`
+to make the command available everywhere:
+
+```
+rokit add --global thekingofspace/LehuaLang lehua
+```
+
+### Option 2: Download a release
 
 1. Open the Releases page for this project.
-2. Download the file for your system:
-   - Windows: `lehua-windows-x86_64.exe`
-   - Linux: `lehua-linux-x86_64`
-3. Rename it to `lehua`, or `lehua.exe` on Windows.
-4. On Linux, make it runnable with `chmod +x lehua`.
-5. Move it to a folder on your PATH so you can run it from anywhere.
+2. Download the archive for your system:
+   - Windows: `lehua-windows-x86_64.zip`
+   - Linux: `lehua-linux-x86_64.tar.gz`
+3. Extract it. Inside is a folder with the program: `lehua.exe` on Windows,
+   `lehua` on Linux.
+4. Move the program to a folder on your PATH so you can run it from anywhere.
 
-### Option 2: Build from source
+### Option 3: Build from source
 
 First install the tools you need.
 
@@ -36,8 +55,8 @@ First install the tools you need.
 Then clone the project and build it.
 
 ```
-git clone https://github.com/lehua-lang/lehua
-cd lehua
+git clone https://github.com/thekingofspace/LehuaLang
+cd LehuaLang
 cargo build --release
 ```
 

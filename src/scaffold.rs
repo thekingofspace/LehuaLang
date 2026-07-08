@@ -35,7 +35,6 @@ pub fn init(name: Option<String>) -> Result<()> {
     write_if_absent(&root.join("roots/hello/lib.toml"), HELLO_LIB_TOML)?;
     write_if_absent(&root.join("roots/hello/init.luau"), HELLO_INIT_LUAU)?;
     write_if_absent(&root.join(".vscode/settings.json"), VSCODE_SETTINGS)?;
-    std::fs::create_dir_all(root.join("dist"))?;
 
     println!(
         "lehua: initialized project '{project_name}'\n  run:   lehua run\n  build: lehua build"

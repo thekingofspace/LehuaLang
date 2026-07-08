@@ -7,8 +7,8 @@ print("Lehua is running from " .. __dirname)
 local hello = require("hello")
 print(hello.greet("Lehua"))
 
--- Aliases from .luaurc work too: `@Game` points at the project root.
-local hello2 = require("@Game/roots/hello")
+-- Aliases from .luaurc work too: `@root` points at the roots folder.
+local hello2 = require("@root/hello")
 assert(hello2 == hello, "same module, same instance")
 
 -- Filesystem access relative to THIS script's folder:

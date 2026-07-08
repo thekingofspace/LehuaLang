@@ -1,6 +1,6 @@
 {
     "languageMode": "nonstrict",
     "aliases": {
-        "Game": "./"
+        "root": "./roots"
     }
 }
