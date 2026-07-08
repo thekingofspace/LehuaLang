@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The semver library · Lehua</title>
+<meta name="description" content="The semver library. Lehua is a standalone Luau runtime that compiles to a single executable.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='6' fill='%23d94a3d'/%3E%3Cg fill='%23e5675b'%3E%3Cellipse cx='16' cy='6' rx='3.4' ry='5'/%3E%3Cellipse cx='16' cy='26' rx='3.4' ry='5'/%3E%3Cellipse cx='6' cy='16' rx='5' ry='3.4'/%3E%3Cellipse cx='26' cy='16' rx='5' ry='3.4'/%3E%3C/g%3E%3Ccircle cx='16' cy='16' r='3' fill='%23ffd24d'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="assets/styles.css">
+<script>(function(){try{var t=localStorage.getItem('lehua-theme');if(!t)t=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light';document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="navbar">
+  <button id="menu-btn" class="icon-btn" aria-label="Open menu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16" stroke-linecap="round"/></svg></button>
+  <a class="brand" href="index.html"><svg viewBox="0 0 32 32"><circle cx="16" cy="16" r="6" fill="#d94a3d"/><g fill="#e5675b"><ellipse cx="16" cy="6" rx="3.4" ry="5"/><ellipse cx="16" cy="26" rx="3.4" ry="5"/><ellipse cx="6" cy="16" rx="5" ry="3.4"/><ellipse cx="26" cy="16" rx="5" ry="3.4"/></g><circle cx="16" cy="16" r="3" fill="#ffd24d"/></svg> Lehua</a>
+  <div class="nav-spacer"></div>
+  <nav class="nav-links">
+    <a class="docs" href="introduction.html">Docs</a>
+    <a class="gh" href="https://github.com/thekingofspace/LehuaLang"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.58 2 12.25c0 4.53 2.87 8.37 6.84 9.73.5.1.68-.22.68-.49v-1.7c-2.78.62-3.37-1.22-3.37-1.22-.45-1.18-1.11-1.5-1.11-1.5-.91-.64.07-.62.07-.62 1 .07 1.53 1.06 1.53 1.06.9 1.58 2.36 1.12 2.94.86.09-.67.35-1.12.63-1.38-2.22-.26-4.56-1.14-4.56-5.07 0-1.12.39-2.03 1.03-2.75-.1-.26-.45-1.3.1-2.71 0 0 .84-.28 2.75 1.05a9.3 9.3 0 015 0c1.91-1.33 2.75-1.05 2.75-1.05.55 1.41.2 2.45.1 2.71.64.72 1.03 1.63 1.03 2.75 0 3.94-2.34 4.81-4.57 5.06.36.32.68.94.68 1.9v2.82c0 .27.18.6.69.49A10.02 10.02 0 0022 12.25C22 6.58 17.52 2 12 2z"/></svg> GitHub</a>
+  </nav>
+  <button id="theme-btn" class="icon-btn" aria-label="Toggle theme"><svg id="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z" stroke-linejoin="round"/></svg><svg id="icon-sun" style="display:none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.4 1.4M17.6 17.6L19 19M19 5l-1.4 1.4M6.4 17.6L5 19" stroke-linecap="round"/></svg></button>
+</header>
+<div class="backdrop" id="backdrop"></div>
+<div class="layout">
+  <aside class="sidebar" id="sidebar">
+    <label class="side-search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3" stroke-linecap="round"/></svg><input id="side-search" type="text" placeholder="Search docs" aria-label="Search the docs"><kbd>Ctrl K</kbd></label>
+    <nav id="side-nav" class="side-nav"></nav>
+  </aside>
+  <main class="content">
+    <article class="doc-page">
+<p class="eyebrow">Library Reference</p>
+<h1>The semver library</h1>
+<p class="lead">The <code>semver</code> library reads and compares semantic version numbers, the <code>major.minor.patch</code> scheme most software uses. Sorting version strings alphabetically gets <code>1.10.0</code> wrong; this library gets it right, and can answer questions like "does 1.4.2 satisfy ^1.2?".</p>
+
+<h2>Including semver</h2>
+<div class="codeblock"><pre><code class="language-luau">--#include[semver]</code></pre></div>
+
+<h2>Version strings</h2>
+<p>A version must have all three numbers: <code>major.minor.patch</code>, like <code>"1.4.2"</code>. Short forms such as <code>"1.4"</code> are not valid versions. Two optional parts can follow: a prerelease after a hyphen, like <code>"2.0.0-beta.1"</code>, and build metadata after a plus sign, like <code>"1.4.2+build.7"</code>. Leading and trailing spaces are ignored.</p>
+
+<h2>Parsing</h2>
+<p><code>semver.parse(version)</code> splits a version string into a table. Invalid input raises a Lua error, so check with <code>semver.isValid(version)</code> first when the string comes from outside your program. <code>isValid</code> returns a boolean and never raises.</p>
+<table>
+<thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>major</code></td><td><code>number</code></td><td>The first number. Bump it for breaking changes.</td></tr>
+<tr><td><code>minor</code></td><td><code>number</code></td><td>The second number. Bump it for new features.</td></tr>
+<tr><td><code>patch</code></td><td><code>number</code></td><td>The third number. Bump it for fixes.</td></tr>
+<tr><td><code>prerelease</code></td><td><code>string?</code></td><td>The part after the hyphen, like <code>"beta.1"</code>. Only present when the version has one.</td></tr>
+<tr><td><code>build</code></td><td><code>string?</code></td><td>The part after the plus sign. Only present when the version has one.</td></tr>
+</tbody>
+</table>
+<div class="codeblock"><div class="window-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="window-title">src/main.luau</span></div><pre><code class="language-luau">--#include[semver]
+
+local v = semver.parse("2.1.0-beta.1+build.7")
+print(v.major, v.minor, v.patch)  -- 2 1 0
+print(v.prerelease, v.build)      -- beta.1 build.7
+
+print(semver.isValid("1.4.2"))  -- true
+print(semver.isValid("1.4"))    -- false, needs all three numbers</code></pre></div>
+
+<h2>Comparing</h2>
+<p><code>semver.compare(a, b)</code> returns <code>-1</code> when <code>a</code> is older, <code>0</code> when they are equal, and <code>1</code> when <code>a</code> is newer. The numbers compare as numbers, so <code>1.10.0</code> is newer than <code>1.9.0</code>. A prerelease comes before its release: <code>1.0.0-rc.1</code> is older than <code>1.0.0</code>. Build metadata is only used as a last tie breaker between otherwise equal versions.</p>
+<div class="codeblock"><div class="window-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="window-title">src/main.luau</span></div><pre><code class="language-luau">--#include[semver]
+
+print(semver.compare("1.9.0", "1.10.0"))      -- -1
+print(semver.compare("1.4.2", "1.4.2"))       -- 0
+print(semver.compare("1.0.0", "1.0.0-rc.1"))  -- 1, the release is newer</code></pre></div>
+
+<h2>Checking requirements</h2>
+<p><code>semver.satisfies(version, requirement)</code> returns <code>true</code> when the version falls inside the range the requirement describes. Requirements use the same syntax as Cargo, Rust's package manager.</p>
+<table>
+<thead><tr><th>Requirement</th><th>Matches</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td><code>^1.2</code></td><td><code>&gt;=1.2.0, &lt;2.0.0</code></td><td>Compatible releases: anything that only adds features or fixes. A bare version like <code>1.2.3</code> means the same as <code>^1.2.3</code>.</td></tr>
+<tr><td><code>~1.2.3</code></td><td><code>&gt;=1.2.3, &lt;1.3.0</code></td><td>Patch releases only.</td></tr>
+<tr><td><code>&gt;=1.2.3, &lt;2</code></td><td>the range itself</td><td>A list of comparators, separated by commas. Every one must hold. The comparators are <code>=</code>, <code>&gt;</code>, <code>&gt;=</code>, <code>&lt;</code>, and <code>&lt;=</code>.</td></tr>
+<tr><td><code>=1.2.3</code></td><td><code>1.2.3</code> only</td><td>Exactly that version.</td></tr>
+<tr><td><code>1.2.*</code></td><td><code>&gt;=1.2.0, &lt;1.3.0</code></td><td>Wildcard. <code>*</code> on its own matches any version.</td></tr>
+</tbody>
+</table>
+<p>Unlike versions, requirements may leave numbers off: <code>^1.2</code> and <code>&gt;=1.2, &lt;2</code> are fine.</p>
+<div class="codeblock"><div class="window-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="window-title">src/main.luau</span></div><pre><code class="language-luau">--#include[semver]
+
+print(semver.satisfies("1.4.2", "^1.2"))         -- true
+print(semver.satisfies("2.0.0", "^1.2"))         -- false
+print(semver.satisfies("1.2.9", "~1.2.3"))       -- true
+print(semver.satisfies("1.5.0", "&gt;=1.2.3, &lt;2"))  -- true</code></pre></div>
+<div class="note"><div class="note-title">Prereleases</div><p>A requirement without a prerelease never matches a prerelease version, so <code>semver.satisfies("2.0.0-beta.1", "^2.0.0")</code> is <code>false</code>. To opt in, put a prerelease on the same version in the requirement, like <code>"&gt;=2.0.0-0"</code>. Also, when <code>major</code> is <code>0</code> the caret is stricter: <code>^0.2.3</code> means <code>&gt;=0.2.3, &lt;0.3.0</code>, because 0.x releases make no compatibility promise.</p></div>
+
+<h2>Sorting</h2>
+<p><code>semver.sort(versions)</code> takes an array of version strings and returns a new array ordered oldest to newest. The input is not changed. The returned strings are cleaned up, so any surrounding spaces are gone.</p>
+<div class="codeblock"><div class="window-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="window-title">src/main.luau</span></div><pre><code class="language-luau">--#include[semver]
+
+local sorted = semver.sort({ "1.10.0", "1.2.0", "2.0.0-rc.1", "1.9.3" })
+for _, v in ipairs(sorted) do
+    print(v)
+end
+-- 1.2.0
+-- 1.9.3
+-- 1.10.0
+-- 2.0.0-rc.1
+
+local newest = sorted[#sorted]</code></pre></div>
+
+<div class="note"><div class="note-title">Errors</div><p>An invalid version raises a Lua error in <code>parse</code>, <code>compare</code>, <code>satisfies</code>, and <code>sort</code>, and an invalid requirement raises one in <code>satisfies</code>. The message names the bad string. Use <code>semver.isValid</code> or <code>pcall</code> when the input comes from outside your program.</p></div>
+</article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer>Lehua is built in Rust on mlua and tokio. Made for people who love Luau.</footer>
+<script src="assets/site.js" defer></script>
+</body>
+</html>

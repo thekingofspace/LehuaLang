@@ -105,6 +105,8 @@ end</code></pre></div>
 <tbody>
 <tr><td><code>fs.read(path)</code></td><td><code>string</code></td><td>The whole file as a string. Works with text or binary.</td></tr>
 <tr><td><code>fs.write(path, data)</code></td><td><code>nil</code></td><td>Writes data to the file, replacing what was there.</td></tr>
+<tr><td><code>fs.readBuffer(path)</code></td><td><code>buffer</code></td><td>The whole file as a Luau buffer.</td></tr>
+<tr><td><code>fs.writeBuffer(path, data)</code></td><td><code>nil</code></td><td>Writes a Luau buffer to the file, replacing what was there.</td></tr>
 <tr><td><code>fs.append(path, data)</code></td><td><code>nil</code></td><td>Adds data to the end of the file, making the file if needed.</td></tr>
 <tr><td><code>fs.readDir(path)</code></td><td><code>{ string }</code></td><td>An array of the names inside a folder.</td></tr>
 </tbody>
@@ -116,6 +118,35 @@ print(fs.read("./notes.txt"))
 for _, name in fs.readDir("@self") do
     print(name)
 end</code></pre></div>
+<p>The buffer pair is for files with custom binary layouts. Build the bytes with the <code>buffer</code> standard library, write them out, and read them back without any string conversion in between.</p>
+<div class="codeblock"><div class="window-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="window-title">src/main.luau</span></div><pre><code class="language-luau">local b = buffer.create(8)
+buffer.writeu32(b, 0, 42)
+buffer.writef32(b, 4, 1.5)
+fs.writeBuffer("./save.dat", b)
+
+local back = fs.readBuffer("./save.dat")
+print(buffer.readu32(back, 0), buffer.readf32(back, 4)) -- 42, 1.5</code></pre></div>
+
+<h2>Finding files with glob</h2>
+<p><code>fs.glob(pattern)</code> returns an array of full paths that match a pattern. Where <code>fs.readDir</code> lists everything in one folder by name, <code>glob</code> filters by shape and can search whole trees. The pattern is resolved like any other path, so <code>./*.txt</code> looks next to the current script. A pattern that is not valid raises an error.</p>
+<table>
+<thead><tr><th>Wildcard</th><th>Matches</th></tr></thead>
+<tbody>
+<tr><td><code>*</code></td><td>any run of characters within one name</td></tr>
+<tr><td><code>?</code></td><td>exactly one character</td></tr>
+<tr><td><code>[abc]</code></td><td>one character from the set. Ranges like <code>[0-9]</code> work too.</td></tr>
+<tr><td><code>**</code></td><td>any number of folders deep, for searching a whole tree</td></tr>
+</tbody>
+</table>
+<div class="codeblock"><div class="window-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="window-title">src/main.luau</span></div><pre><code class="language-luau">-- every .luau file next to this script
+for _, path in fs.glob("./*.luau") do
+    print(path)
+end
+
+-- every .json file under data, however deep
+for _, path in fs.glob("./data/**/*.json") do
+    print(fs.basename(path))
+end</code></pre></div>
 
 <h2>Folders and removing</h2>
 <table>
@@ -126,6 +157,37 @@ end</code></pre></div>
 <tr><td><code>fs.removeAll(path)</code></td><td><code>nil</code></td><td>Removes a file, or a folder and everything inside it.</td></tr>
 </tbody>
 </table>
+
+<h2>Copying and moving</h2>
+<table>
+<thead><tr><th>Function</th><th>Returns</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>fs.copy(src, dst)</code></td><td><code>nil</code></td><td>Copies one file, replacing the destination if it is already there. Raises an error if the source is a folder.</td></tr>
+<tr><td><code>fs.copyAll(src, dst)</code></td><td><code>nil</code></td><td>Copies a file, or a folder and everything inside it. Makes any parent folders the destination needs.</td></tr>
+<tr><td><code>fs.move(src, dst)</code></td><td><code>nil</code></td><td>Moves a file or folder. It tries a fast rename first; when that is not possible, for example across drives, it copies everything and then deletes the original.</td></tr>
+</tbody>
+</table>
+<div class="note"><div class="note-title">A folder cannot move into itself</div><p><code>fs.copyAll</code> and <code>fs.move</code> raise an error when the destination is inside the source folder, since that copy would never end.</p></div>
+<div class="codeblock"><div class="window-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="window-title">src/main.luau</span></div><pre><code class="language-luau">fs.copy("./config.toml", "./config.backup.toml")
+fs.copyAll("./assets", "./dist/assets")
+fs.move("./old-name.txt", "./new-name.txt")</code></pre></div>
+
+<h2>Temporary files and folders</h2>
+<p>These make a fresh entry in the operating system's temp folder and return its full path. Every call picks a new unique name, so parallel runs never clash. The entry really exists on disk when the call returns. Temp space is for short lived scratch work; remove what you made with <code>fs.removeAll</code> when you are done.</p>
+<table>
+<thead><tr><th>Function</th><th>Returns</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>fs.tempDir()</code></td><td><code>string</code></td><td>Makes a new empty folder and returns its path.</td></tr>
+<tr><td><code>fs.tempFile(extension?)</code></td><td><code>string</code></td><td>Makes a new empty file and returns its path. The extension defaults to <code>tmp</code>; a leading dot is fine.</td></tr>
+</tbody>
+</table>
+<div class="codeblock"><div class="window-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="window-title">src/main.luau</span></div><pre><code class="language-luau">local dir = fs.tempDir()
+fs.write(fs.join(dir, "work.txt"), "scratch data")
+
+local log = fs.tempFile("log") -- ends in .log
+fs.append(log, "started\n")
+
+fs.removeAll(dir)</code></pre></div>
 
 <h2>fs.open and the File object</h2>
 <p><code>fs.open(path, mode?)</code> opens a file and returns a File object. The default mode is <code>"r"</code>. Call <code>close</code> when you are done.</p>

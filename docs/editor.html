@@ -30,7 +30,7 @@
     <article class="doc-page">
       <p class="eyebrow">Reference</p>
       <h1>Editor setup</h1>
-      <p><code>lehua init</code> writes a <code>types.d.luau</code> file with type definitions for <code>parallel</code>, <code>Port</code>, <code>fs</code>, <code>process</code>, <code>__dirname</code>, <code>__filename</code>, and <code>channel</code>. It also writes a <code>.vscode/settings.json</code> that points <a href="https://github.com/JohnnyMorganz/luau-lsp">luau-lsp</a> at those definitions.</p>
+      <p><code>lehua init</code> writes a <code>types.d.luau</code> file with type definitions for <code>parallel</code>, <code>Port</code>, <code>__dirname</code>, <code>__filename</code>, <code>channel</code>, and every built-in library: <code>fs</code>, <code>process</code>, <code>serde</code>, <code>cryptography</code>, <code>datetime</code>, <code>regex</code>, <code>stdio</code>, <code>luau</code>, <code>url</code>, <code>semver</code>, <code>archive</code>, <code>sqlite</code>, and <code>mongo</code>. It also writes a <code>.vscode/settings.json</code> that points <a href="https://github.com/JohnnyMorganz/luau-lsp">luau-lsp</a> at those definitions.</p>
       <div class="codeblock"><div class="window-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="window-title">.vscode/settings.json</span></div><pre><code class="language-json">{
     "luau-lsp.types.definitionFiles": ["types.d.luau"],
     "luau-lsp.platform.type": "standard",

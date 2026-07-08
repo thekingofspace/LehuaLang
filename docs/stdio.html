@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The stdio library · Lehua</title>
+<meta name="description" content="The stdio library. Lehua is a standalone Luau runtime that compiles to a single executable.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='6' fill='%23d94a3d'/%3E%3Cg fill='%23e5675b'%3E%3Cellipse cx='16' cy='6' rx='3.4' ry='5'/%3E%3Cellipse cx='16' cy='26' rx='3.4' ry='5'/%3E%3Cellipse cx='6' cy='16' rx='5' ry='3.4'/%3E%3Cellipse cx='26' cy='16' rx='5' ry='3.4'/%3E%3C/g%3E%3Ccircle cx='16' cy='16' r='3' fill='%23ffd24d'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="assets/styles.css">
+<script>(function(){try{var t=localStorage.getItem('lehua-theme');if(!t)t=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light';document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="navbar">
+  <button id="menu-btn" class="icon-btn" aria-label="Open menu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16" stroke-linecap="round"/></svg></button>
+  <a class="brand" href="index.html"><svg viewBox="0 0 32 32"><circle cx="16" cy="16" r="6" fill="#d94a3d"/><g fill="#e5675b"><ellipse cx="16" cy="6" rx="3.4" ry="5"/><ellipse cx="16" cy="26" rx="3.4" ry="5"/><ellipse cx="6" cy="16" rx="5" ry="3.4"/><ellipse cx="26" cy="16" rx="5" ry="3.4"/></g><circle cx="16" cy="16" r="3" fill="#ffd24d"/></svg> Lehua</a>
+  <div class="nav-spacer"></div>
+  <nav class="nav-links">
+    <a class="docs" href="introduction.html">Docs</a>
+    <a class="gh" href="https://github.com/thekingofspace/LehuaLang"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.58 2 12.25c0 4.53 2.87 8.37 6.84 9.73.5.1.68-.22.68-.49v-1.7c-2.78.62-3.37-1.22-3.37-1.22-.45-1.18-1.11-1.5-1.11-1.5-.91-.64.07-.62.07-.62 1 .07 1.53 1.06 1.53 1.06.9 1.58 2.36 1.12 2.94.86.09-.67.35-1.12.63-1.38-2.22-.26-4.56-1.14-4.56-5.07 0-1.12.39-2.03 1.03-2.75-.1-.26-.45-1.3.1-2.71 0 0 .84-.28 2.75 1.05a9.3 9.3 0 015 0c1.91-1.33 2.75-1.05 2.75-1.05.55 1.41.2 2.45.1 2.71.64.72 1.03 1.63 1.03 2.75 0 3.94-2.34 4.81-4.57 5.06.36.32.68.94.68 1.9v2.82c0 .27.18.6.69.49A10.02 10.02 0 0022 12.25C22 6.58 17.52 2 12 2z"/></svg> GitHub</a>
+  </nav>
+  <button id="theme-btn" class="icon-btn" aria-label="Toggle theme"><svg id="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z" stroke-linejoin="round"/></svg><svg id="icon-sun" style="display:none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.4 1.4M17.6 17.6L19 19M19 5l-1.4 1.4M6.4 17.6L5 19" stroke-linecap="round"/></svg></button>
+</header>
+<div class="backdrop" id="backdrop"></div>
+<div class="layout">
+  <aside class="sidebar" id="sidebar">
+    <label class="side-search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3" stroke-linecap="round"/></svg><input id="side-search" type="text" placeholder="Search docs" aria-label="Search the docs"><kbd>Ctrl K</kbd></label>
+    <nav id="side-nav" class="side-nav"></nav>
+  </aside>
+  <main class="content">
+    <article class="doc-page">
+<p class="eyebrow">Library Reference</p>
+<h1>The stdio library</h1>
+<p class="lead">The <code>stdio</code> library is how a program talks with the terminal. It prints text exactly as you give it, reads what the user types, and colors output with ANSI escape codes.</p>
+
+<h2>Including stdio</h2>
+<div class="codeblock"><pre><code class="language-luau">--#include[stdio]</code></pre></div>
+
+<h2>Writing</h2>
+<p><code>stdio.write(...)</code> prints its arguments to standard output. <code>stdio.ewrite(...)</code> does the same on standard error, the stream terminals set aside for warnings and error messages. Both accept any mix of strings, numbers, and booleans, join them with nothing in between, and add no newline at the end. Anything else, like a table or <code>nil</code>, raises a Lua error.</p>
+<p>Compare with <code>print</code>, which puts a tab between values and a newline at the end. With <code>write</code> you place every character yourself, which is exactly what you want for progress output and colored text.</p>
+<div class="codeblock"><div class="window-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="window-title">src/main.luau</span></div><pre><code class="language-luau">--#include[stdio]
+
+stdio.write("2 + 2 = ", 4, "\n")
+stdio.write("finished: ", true, "\n")
+stdio.ewrite("warning: running low on disk space\n")</code></pre></div>
+
+<h2>Reading input</h2>
+<p>Three functions read from standard input, which is whatever the user types or whatever another program pipes in.</p>
+<table>
+<thead><tr><th>Function</th><th>Returns</th></tr></thead>
+<tbody>
+<tr><td><code>stdio.readLine()</code></td><td>The next line as a string, without the trailing newline. Returns <code>nil</code> when the input ends.</td></tr>
+<tr><td><code>stdio.readAll()</code></td><td>Everything that is left, as one string. An empty string if there is nothing.</td></tr>
+<tr><td><code>stdio.prompt(message?, options?)</code></td><td>Prints the message, then reads an answer. With an options list it shows a numbered menu instead; see below. Returns <code>nil</code> when the input ends.</td></tr>
+</tbody>
+</table>
+<p>Because <code>readLine</code> returns <code>nil</code> only at the end of input, you can loop until it does. An empty line comes back as <code>""</code>, not <code>nil</code>.</p>
+<div class="codeblock"><div class="window-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="window-title">src/main.luau</span></div><pre><code class="language-luau">--#include[stdio]
+
+-- Count the lines piped in, for example:
+--   lehua run src/main.luau &lt; notes.txt
+local count = 0
+local line = stdio.readLine()
+while line ~= nil do
+    count += 1
+    line = stdio.readLine()
+end
+stdio.write("read ", count, " lines\n")</code></pre></div>
+<div class="note"><div class="note-title">Reading waits</div><p>All three functions block until input arrives. If nothing is typed and nothing is piped in, the program sits and waits. To end the input by hand, press Ctrl+Z then Enter on Windows, or Ctrl+D elsewhere.</p></div>
+
+<h2>Asking a question</h2>
+<p><code>stdio.prompt</code> rolls the two common steps into one call: show a message, wait for an answer.</p>
+<div class="codeblock"><div class="window-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="window-title">src/main.luau</span></div><pre><code class="language-luau">--#include[stdio]
+
+local name = stdio.prompt("What is your name? ")
+
+if name == nil then
+    stdio.ewrite("input ended before an answer\n")
+elseif name == "" then
+    stdio.write("The quiet type. Nice to meet you anyway.\n")
+else
+    stdio.write("Hello, ", name, "!\n")
+end</code></pre></div>
+
+<h3>Choosing from a list</h3>
+<p>Pass an array of choices as the second argument and <code>prompt</code> turns into a small menu. It prints the message, the numbered choices, and a <code>&gt; </code> marker, then keeps asking until the answer is a valid number or matches one of the choices by name (capitalization does not matter). It returns two values: the chosen text and its number. Both are <code>nil</code> if the input ends first. An empty options list raises an error.</p>
+<div class="codeblock"><div class="window-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="window-title">src/main.luau</span></div><pre><code class="language-luau">--#include[stdio]
+
+local choice, index = stdio.prompt("Pick a color:", { "red", "green", "blue" })
+-- Pick a color:
+--   1) red
+--   2) green
+--   3) blue
+-- >
+
+if choice then
+    stdio.write("you picked ", choice, " (option ", index, ")\n")
+end</code></pre></div>
+
+<h2>Checking for a terminal</h2>
+<p><code>stdio.isTTY(stream?)</code> returns <code>true</code> when a stream is connected to a real terminal and <code>false</code> when it is redirected to a file or another program. The stream is <code>"stdin"</code>, <code>"stdout"</code>, or <code>"stderr"</code>; leaving it out means <code>"stdout"</code>. Any other name raises a Lua error.</p>
+<p>Use it to decide whether colors and prompts make sense. A program whose output is piped into a file should usually skip both.</p>
+
+<h2>Colors and styles</h2>
+<p><code>stdio.color(name)</code>, <code>stdio.bgColor(name)</code>, and <code>stdio.style(name)</code> each return a short string called an ANSI escape code. The string itself is invisible. When a terminal prints it, everything printed after it changes appearance, until a reset code switches things back. So coloring text is just string concatenation.</p>
+<p><code>color</code> sets the text color and <code>bgColor</code> sets the background behind it. Both accept the same names:</p>
+<table>
+<thead><tr><th>Group</th><th>Names</th></tr></thead>
+<tbody>
+<tr><td>Normal</td><td><code>black</code>, <code>red</code>, <code>green</code>, <code>yellow</code>, <code>blue</code>, <code>magenta</code>, <code>cyan</code>, <code>white</code></td></tr>
+<tr><td>Bright</td><td><code>brightBlack</code>, <code>brightRed</code>, <code>brightGreen</code>, <code>brightYellow</code>, <code>brightBlue</code>, <code>brightMagenta</code>, <code>brightCyan</code>, <code>brightWhite</code></td></tr>
+<tr><td>Special</td><td><code>reset</code> switches back to the default color: the text color in <code>color</code>, the background in <code>bgColor</code>.</td></tr>
+</tbody>
+</table>
+<p><code>style</code> changes how the text is drawn rather than its color:</p>
+<table>
+<thead><tr><th>Name</th><th>Effect</th></tr></thead>
+<tbody>
+<tr><td><code>reset</code></td><td>Turns off all colors and styles at once — the usual way to end colored output.</td></tr>
+<tr><td><code>bold</code></td><td>Heavier text.</td></tr>
+<tr><td><code>dim</code></td><td>Fainter text.</td></tr>
+<tr><td><code>italic</code></td><td>Slanted text.</td></tr>
+<tr><td><code>underline</code></td><td>A line under the text.</td></tr>
+<tr><td><code>blink</code></td><td>Flashing text. Many terminals ignore it, mercifully.</td></tr>
+<tr><td><code>reverse</code></td><td>Swaps the text and background colors.</td></tr>
+<tr><td><code>strikethrough</code></td><td>A line through the text.</td></tr>
+</tbody>
+</table>
+<p>Passing a name that is not in these tables raises a Lua error that lists the supported names.</p>
+<div class="codeblock"><div class="window-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="window-title">src/main.luau</span></div><pre><code class="language-luau">--#include[stdio]
+
+local reset = stdio.style("reset")
+
+if stdio.isTTY() then
+    stdio.write(stdio.color("green"), "ok", reset, " all tests passed\n")
+    stdio.write(stdio.style("bold"), stdio.color("red"), "error:", reset, " file not found\n")
+    stdio.write(stdio.bgColor("blue"), stdio.color("brightWhite"), " INFO ", reset, " build finished\n")
+else
+    stdio.write("ok all tests passed\n")
+end</code></pre></div>
+<div class="note"><div class="note-title">Where colors work</div><p>Escape codes render in modern terminals: Windows Terminal, the macOS Terminal, and just about every Linux terminal. When output goes to a file or another program, the codes are written out as literal characters instead. Check <code>stdio.isTTY()</code> before coloring, or clean the text up afterwards with <code>stripColors</code>.</p></div>
+
+<h2>Stripping colors</h2>
+<p><code>stdio.stripColors(text)</code> returns the text with every ANSI escape sequence removed. Handy for writing colored output to a log file, or for measuring how wide a string will actually look on screen.</p>
+<div class="codeblock"><div class="window-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="window-title">src/main.luau</span></div><pre><code class="language-luau">local fancy = stdio.color("red") .. "alert" .. stdio.style("reset")
+print(#fancy)                      -- 14
+print(#stdio.stripColors(fancy))   -- 5</code></pre></div>
+</article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer>Lehua is built in Rust on mlua and tokio. Made for people who love Luau.</footer>
+<script src="assets/site.js" defer></script>
+</body>
+</html>

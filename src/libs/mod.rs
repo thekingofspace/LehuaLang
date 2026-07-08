@@ -1,5 +1,16 @@
+pub mod archive;
+pub mod cryptography;
+pub mod datetime;
 pub mod fs;
+pub mod luau;
+pub mod mongo;
 pub mod process;
+pub mod regex;
+pub mod semver;
+pub mod serde;
+pub mod sqlite;
+pub mod stdio;
+pub mod url;
 
 use std::collections::BTreeMap;
 use std::path::{Component, Path, PathBuf};
@@ -19,12 +30,37 @@ pub struct LibCtx<'a> {
     pub sched: Rc<VmScheduler>,
 }
 
-pub const KNOWN: &[&str] = &["fs", "process"];
+pub const KNOWN: &[&str] = &[
+    "fs",
+    "process",
+    "serde",
+    "cryptography",
+    "datetime",
+    "regex",
+    "stdio",
+    "luau",
+    "url",
+    "semver",
+    "archive",
+    "sqlite",
+    "mongo",
+];
 
 pub fn build(name: &str, ctx: &LibCtx) -> mlua::Result<Value> {
     match name {
-        "fs" => fs::build(ctx),
-        "process" => process::build(ctx),
+        "fs" => self::fs::build(ctx),
+        "process" => self::process::build(ctx),
+        "serde" => self::serde::build(ctx),
+        "cryptography" => self::cryptography::build(ctx),
+        "datetime" => self::datetime::build(ctx),
+        "regex" => self::regex::build(ctx),
+        "stdio" => self::stdio::build(ctx),
+        "luau" => self::luau::build(ctx),
+        "url" => self::url::build(ctx),
+        "semver" => self::semver::build(ctx),
+        "archive" => self::archive::build(ctx),
+        "sqlite" => self::sqlite::build(ctx),
+        "mongo" => self::mongo::build(ctx),
         other => Err(LehuaError::msg(format!("unknown built-in library '{other}'")).into()),
     }
 }

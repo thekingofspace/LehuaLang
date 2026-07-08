@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The archive library · Lehua</title>
+<meta name="description" content="The archive library. Lehua is a standalone Luau runtime that compiles to a single executable.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='6' fill='%23d94a3d'/%3E%3Cg fill='%23e5675b'%3E%3Cellipse cx='16' cy='6' rx='3.4' ry='5'/%3E%3Cellipse cx='16' cy='26' rx='3.4' ry='5'/%3E%3Cellipse cx='6' cy='16' rx='5' ry='3.4'/%3E%3Cellipse cx='26' cy='16' rx='5' ry='3.4'/%3E%3C/g%3E%3Ccircle cx='16' cy='16' r='3' fill='%23ffd24d'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="assets/styles.css">
+<script>(function(){try{var t=localStorage.getItem('lehua-theme');if(!t)t=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light';document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="navbar">
+  <button id="menu-btn" class="icon-btn" aria-label="Open menu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16" stroke-linecap="round"/></svg></button>
+  <a class="brand" href="index.html"><svg viewBox="0 0 32 32"><circle cx="16" cy="16" r="6" fill="#d94a3d"/><g fill="#e5675b"><ellipse cx="16" cy="6" rx="3.4" ry="5"/><ellipse cx="16" cy="26" rx="3.4" ry="5"/><ellipse cx="6" cy="16" rx="5" ry="3.4"/><ellipse cx="26" cy="16" rx="5" ry="3.4"/></g><circle cx="16" cy="16" r="3" fill="#ffd24d"/></svg> Lehua</a>
+  <div class="nav-spacer"></div>
+  <nav class="nav-links">
+    <a class="docs" href="introduction.html">Docs</a>
+    <a class="gh" href="https://github.com/thekingofspace/LehuaLang"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.58 2 12.25c0 4.53 2.87 8.37 6.84 9.73.5.1.68-.22.68-.49v-1.7c-2.78.62-3.37-1.22-3.37-1.22-.45-1.18-1.11-1.5-1.11-1.5-.91-.64.07-.62.07-.62 1 .07 1.53 1.06 1.53 1.06.9 1.58 2.36 1.12 2.94.86.09-.67.35-1.12.63-1.38-2.22-.26-4.56-1.14-4.56-5.07 0-1.12.39-2.03 1.03-2.75-.1-.26-.45-1.3.1-2.71 0 0 .84-.28 2.75 1.05a9.3 9.3 0 015 0c1.91-1.33 2.75-1.05 2.75-1.05.55 1.41.2 2.45.1 2.71.64.72 1.03 1.63 1.03 2.75 0 3.94-2.34 4.81-4.57 5.06.36.32.68.94.68 1.9v2.82c0 .27.18.6.69.49A10.02 10.02 0 0022 12.25C22 6.58 17.52 2 12 2z"/></svg> GitHub</a>
+  </nav>
+  <button id="theme-btn" class="icon-btn" aria-label="Toggle theme"><svg id="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z" stroke-linejoin="round"/></svg><svg id="icon-sun" style="display:none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.4 1.4M17.6 17.6L19 19M19 5l-1.4 1.4M6.4 17.6L5 19" stroke-linecap="round"/></svg></button>
+</header>
+<div class="backdrop" id="backdrop"></div>
+<div class="layout">
+  <aside class="sidebar" id="sidebar">
+    <label class="side-search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3" stroke-linecap="round"/></svg><input id="side-search" type="text" placeholder="Search docs" aria-label="Search the docs"><kbd>Ctrl K</kbd></label>
+    <nav id="side-nav" class="side-nav"></nav>
+  </aside>
+  <main class="content">
+    <article class="doc-page">
+<p class="eyebrow">Library Reference</p>
+<h1>The archive library</h1>
+<p class="lead">The <code>archive</code> library bundles files into zip and tar archives and unpacks them again. An archive is a single file that holds many files and folders, which makes backups and downloads easy to move around.</p>
+
+<h2>Including archive</h2>
+<div class="codeblock"><pre><code class="language-luau">--#include[archive]</code></pre></div>
+
+<h2>Sources and paths</h2>
+<p>Every function that creates an archive takes a <code>sources</code> argument. It can be one path or an array of paths. Each source is added to the archive under its own name, so <code>"./build/output"</code> shows up inside as <code>output</code>. A folder is added recursively: the folder itself and everything inside it, under the folder's name.</p>
+<p>Paths follow the same rules as the <code>fs</code> library. A relative path resolves against the folder of the script that included <code>archive</code>, an absolute path is used as it is, and <code>@self</code> or a <code>.luaurc</code> alias works too. A source that does not exist, an empty array, or a value that is not a path raises a Lua error before anything is written.</p>
+
+<h2>Zip archives</h2>
+<p>Zip is the common choice: it compresses every file and opens everywhere, including Windows Explorer.</p>
+<table>
+<thead><tr><th>Function</th><th>Returns</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td><code>archive.zip(dest, sources, options?)</code></td><td>nothing</td><td>Creates a zip file at <code>dest</code> containing the sources. <code>options</code> is a table; <code>options.level</code> sets the compression level.</td></tr>
+<tr><td><code>archive.unzip(src, destFolder)</code></td><td>nothing</td><td>Extracts every entry of the zip into <code>destFolder</code>, creating the folder if it is missing.</td></tr>
+<tr><td><code>archive.listZip(src)</code></td><td>array</td><td>Returns the entries without extracting anything.</td></tr>
+</tbody>
+</table>
+<p><code>options.level</code> ranges from 0 to 9. Higher levels make smaller files but take longer; 0 stores the data with almost no compression. Leave the option out for a balanced default.</p>
+<p>Each entry from <code>archive.listZip</code> is a table with these fields:</p>
+<table>
+<thead><tr><th>Field</th><th>Type</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td><code>name</code></td><td><code>string</code></td><td>The path inside the archive, with forward slashes.</td></tr>
+<tr><td><code>size</code></td><td><code>number</code></td><td>The file's size in bytes before compression.</td></tr>
+<tr><td><code>compressedSize</code></td><td><code>number</code></td><td>The size in bytes inside the archive.</td></tr>
+<tr><td><code>isDir</code></td><td><code>boolean</code></td><td><code>true</code> when the entry is a folder rather than a file.</td></tr>
+</tbody>
+</table>
+<div class="codeblock"><div class="window-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="window-title">src/main.luau</span></div><pre><code class="language-luau">--#include[archive]
+
+-- one file and one folder, compressed as small as possible
+archive.zip("./backup.zip", { "./notes.txt", "./photos" }, { level = 9 })
+
+for _, entry in archive.listZip("./backup.zip") do
+    print(entry.name, entry.size, "->", entry.compressedSize)
+end
+
+archive.unzip("./backup.zip", "./restored")
+-- ./restored/notes.txt and ./restored/photos/... now exist</code></pre></div>
+
+<h2>Tar archives</h2>
+<p>Tar is the usual format on Linux and macOS. A plain tar file only bundles files without shrinking them, so it is almost always paired with gzip compression.</p>
+<table>
+<thead><tr><th>Function</th><th>Returns</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td><code>archive.tar(dest, sources)</code></td><td>nothing</td><td>Creates a tar file at <code>dest</code>. When <code>dest</code> ends in <code>.gz</code> or <code>.tgz</code>, the result is gzip compressed as well.</td></tr>
+<tr><td><code>archive.untar(src, destFolder)</code></td><td>nothing</td><td>Extracts the tar into <code>destFolder</code>, creating the folder if it is missing. Gzip is detected from the file's contents, so the name does not matter.</td></tr>
+<tr><td><code>archive.listTar(src)</code></td><td>array</td><td>Returns the entries without extracting anything. Detects gzip the same way.</td></tr>
+</tbody>
+</table>
+<p>Entries from <code>archive.listTar</code> have the same <code>name</code>, <code>size</code>, and <code>isDir</code> fields as zip entries. There is no <code>compressedSize</code>, because gzip compresses the whole archive at once rather than each file.</p>
+<div class="codeblock"><div class="window-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="window-title">src/main.luau</span></div><pre><code class="language-luau">--#include[archive]
+
+-- the .gz ending turns on gzip compression
+archive.tar("./site-backup.tar.gz", "./site")
+
+for _, entry in archive.listTar("./site-backup.tar.gz") do
+    print(entry.name, entry.isDir)
+end
+
+archive.untar("./site-backup.tar.gz", "./restored")
+-- ./restored/site/... now exists</code></pre></div>
+
+<div class="note"><div class="note-title">Extraction is sandboxed to the destination</div><p>A malicious archive can contain entry names like <code>../../secret</code> that try to write outside the folder you extract into. <code>archive.unzip</code> and <code>archive.untar</code> refuse such paths, so extraction never touches anything outside the destination folder.</p></div>
+
+<h2>Errors</h2>
+<p>Problems raise a Lua error: a source that does not exist, a destination that cannot be written, a corrupt archive, or a source path with no usable name such as a bare drive root. Wrap calls in <code>pcall</code> when the archive comes from outside your program.</p>
+</article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer>Lehua is built in Rust on mlua and tokio. Made for people who love Luau.</footer>
+<script src="assets/site.js" defer></script>
+</body>
+</html>

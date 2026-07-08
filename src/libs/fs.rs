@@ -149,6 +149,28 @@ pub fn build(ctx: &LibCtx) -> mlua::Result<Value> {
     {
         let scope = scope.clone();
         t.set(
+            "readBuffer",
+            lua.create_function(move |lua, p: String| {
+                let full = scope.resolve(&p)?;
+                let bytes = std::fs::read(&full).map_err(mlua::Error::external)?;
+                lua.create_buffer(bytes)
+            })?,
+        )?;
+    }
+    {
+        let scope = scope.clone();
+        t.set(
+            "writeBuffer",
+            lua.create_function(move |_, (p, buf): (String, mlua::Buffer)| {
+                let full = scope.resolve(&p)?;
+                std::fs::write(&full, buf.to_vec()).map_err(mlua::Error::external)?;
+                Ok(())
+            })?,
+        )?;
+    }
+    {
+        let scope = scope.clone();
+        t.set(
             "append",
             lua.create_function(move |_, (p, data): (String, mlua::LuaString)| {
                 let full = scope.resolve(&p)?;
@@ -207,6 +229,125 @@ pub fn build(ctx: &LibCtx) -> mlua::Result<Value> {
     {
         let scope = scope.clone();
         t.set(
+            "copy",
+            lua.create_function(move |_, (src, dst): (String, String)| {
+                let src = scope.resolve(&src)?;
+                let dst = scope.resolve(&dst)?;
+                if src.is_dir() {
+                    return Err(LehuaError::msg(
+                        "fs.copy copies files; use fs.copyAll for folders",
+                    )
+                    .into());
+                }
+                if src == dst {
+                    return Err(LehuaError::msg(
+                        "fs.copy: source and destination are the same file",
+                    )
+                    .into());
+                }
+                std::fs::copy(&src, &dst).map_err(mlua::Error::external)?;
+                Ok(())
+            })?,
+        )?;
+    }
+    {
+        let scope = scope.clone();
+        t.set(
+            "copyAll",
+            lua.create_function(move |_, (src, dst): (String, String)| {
+                let src = scope.resolve(&src)?;
+                let dst = scope.resolve(&dst)?;
+                if src.is_dir() && dst.starts_with(&src) {
+                    return Err(LehuaError::msg(
+                        "fs.copyAll: destination is inside the source folder",
+                    )
+                    .into());
+                }
+                copy_recursive(&src, &dst).map_err(mlua::Error::external)?;
+                Ok(())
+            })?,
+        )?;
+    }
+    {
+        let scope = scope.clone();
+        t.set(
+            "move",
+            lua.create_function(move |_, (src, dst): (String, String)| {
+                let src = scope.resolve(&src)?;
+                let dst = scope.resolve(&dst)?;
+                if src.is_dir() && dst.starts_with(&src) {
+                    return Err(LehuaError::msg(
+                        "fs.move: destination is inside the source folder",
+                    )
+                    .into());
+                }
+                if std::fs::rename(&src, &dst).is_ok() {
+                    return Ok(());
+                }
+                copy_recursive(&src, &dst).map_err(mlua::Error::external)?;
+                let r = if src.is_dir() {
+                    std::fs::remove_dir_all(&src)
+                } else {
+                    std::fs::remove_file(&src)
+                };
+                r.map_err(mlua::Error::external)?;
+                Ok(())
+            })?,
+        )?;
+    }
+    {
+        let scope = scope.clone();
+        t.set(
+            "glob",
+            lua.create_function(move |lua, pattern: String| {
+                let full = scope.resolve(&pattern)?;
+                let pattern = full.to_string_lossy().replace('\\', "/");
+                let out = lua.create_table()?;
+                let mut i = 1usize;
+                for entry in glob::glob(&pattern)
+                    .map_err(|e| LehuaError::msg(format!("invalid glob pattern: {e}")))?
+                {
+                    if let Ok(path) = entry {
+                        out.raw_seti(i, path.to_string_lossy().into_owned())?;
+                        i += 1;
+                    }
+                }
+                Ok(out)
+            })?,
+        )?;
+    }
+
+    t.set(
+        "tempDir",
+        lua.create_function(|_, ()| {
+            let path = std::env::temp_dir().join(format!("lehua-{}", random_suffix()?));
+            std::fs::create_dir_all(&path).map_err(mlua::Error::external)?;
+            Ok(path.to_string_lossy().into_owned())
+        })?,
+    )?;
+
+    t.set(
+        "tempFile",
+        lua.create_function(|_, ext: Option<String>| {
+            let ext = ext
+                .map(|e| {
+                    let e = e.trim_start_matches('.').to_string();
+                    if e.is_empty() {
+                        String::from("tmp")
+                    } else {
+                        e
+                    }
+                })
+                .unwrap_or_else(|| String::from("tmp"));
+            let path = std::env::temp_dir().join(format!("lehua-{}.{ext}", random_suffix()?));
+            File::create(&path).map_err(mlua::Error::external)?;
+            Ok(path.to_string_lossy().into_owned())
+        })?,
+    )?;
+
+    {
+        let scope = scope.clone();
+        t.set(
             "readDir",
             lua.create_function(move |lua, p: String| {
                 let full = scope.resolve(&p)?;
@@ -235,6 +376,33 @@ pub fn build(ctx: &LibCtx) -> mlua::Result<Value> {
     }
 
     Ok(Value::Table(t))
+}
+
+fn copy_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
+    if src.is_dir() {
+        std::fs::create_dir_all(dst)?;
+        for entry in std::fs::read_dir(src)? {
+            let entry = entry?;
+            copy_recursive(&entry.path(), &dst.join(entry.file_name()))?;
+        }
+    } else {
+        if let Some(parent) = dst.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::copy(src, dst)?;
+    }
+    Ok(())
+}
+
+fn random_suffix() -> mlua::Result<String> {
+    let mut bytes = [0u8; 8];
+    getrandom::fill(&mut bytes)
+        .map_err(|e| LehuaError::msg(format!("random source failed: {e}")))?;
+    let mut out = String::with_capacity(16);
+    for b in bytes {
+        out.push_str(&format!("{b:02x}"));
+    }
+    Ok(out)
 }
 
 fn unix_secs(t: std::time::SystemTime) -> f64 {
@@ -367,8 +535,19 @@ fn rewind_buffer(this: &FileHandle) -> mlua::Result<()> {
 fn read_impl(lua: &Lua, this: &FileHandle, fmt: Option<Value>) -> mlua::Result<Value> {
     if let Some(Value::Integer(n)) = &fmt {
         let n = (*n).max(0) as usize;
+        if n == 0 {
+            if this.rbuf.borrow().is_empty() {
+                let mut probe = [0u8; 1];
+                let got = this.with_file(|f| f.read(&mut probe))?;
+                if got == 0 {
+                    return Ok(Value::Nil);
+                }
+                this.rbuf.borrow_mut().push(probe[0]);
+            }
+            return Ok(Value::String(lua.create_string("")?));
+        }
         let bytes = read_n(this, n)?;
-        if bytes.is_empty() && n > 0 {
+        if bytes.is_empty() {
             return Ok(Value::Nil);
         }
         return Ok(Value::String(lua.create_string(bytes)?));
@@ -422,16 +601,20 @@ fn read_impl(lua: &Lua, this: &FileHandle, fmt: Option<Value>) -> mlua::Result<V
 }
 
 fn read_n(this: &FileHandle, n: usize) -> mlua::Result<Vec<u8>> {
-    let mut out = Vec::with_capacity(n);
+    let mut out = Vec::with_capacity(n.min(1 << 20));
     {
         let mut buf = this.rbuf.borrow_mut();
         let take = n.min(buf.len());
         out.extend(buf.drain(..take));
     }
-    if out.len() < n {
-        let mut remaining = vec![0u8; n - out.len()];
-        let got = this.with_file(|f| f.read(&mut remaining))?;
-        out.extend_from_slice(&remaining[..got]);
+    let mut chunk = [0u8; 64 * 1024];
+    while out.len() < n {
+        let want = (n - out.len()).min(chunk.len());
+        let got = this.with_file(|f| f.read(&mut chunk[..want]))?;
+        if got == 0 {
+            break;
+        }
+        out.extend_from_slice(&chunk[..got]);
     }
     Ok(out)
 }

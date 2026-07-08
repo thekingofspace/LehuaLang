@@ -28,7 +28,18 @@
     ]},
     { title: "Library Reference", icon: ICON.book, items: [
       { t: "fs", h: "fs.html" },
-      { t: "process", h: "process.html" }
+      { t: "process", h: "process.html" },
+      { t: "serde", h: "serde.html" },
+      { t: "cryptography", h: "cryptography.html" },
+      { t: "datetime", h: "datetime.html" },
+      { t: "regex", h: "regex.html" },
+      { t: "stdio", h: "stdio.html" },
+      { t: "luau", h: "luau.html" },
+      { t: "url", h: "url.html" },
+      { t: "semver", h: "semver.html" },
+      { t: "archive", h: "archive.html" },
+      { t: "sqlite", h: "sqlite.html" },
+      { t: "mongo", h: "mongo.html" }
     ]},
     { title: "Reference", icon: ICON.terminal, items: [
       { t: "CLI", h: "cli.html" },
@@ -186,7 +197,7 @@
 
   // ---- Syntax highlighting ----
   var LUAU_KW = "local function end if then else elseif for in do while repeat until return break continue and or not nil true false type export".split(" ");
-  var LUAU_GLOBAL = "require parallel channel __dirname __filename fs process print assert pcall error tostring tonumber pairs ipairs select".split(" ");
+  var LUAU_GLOBAL = "require parallel channel __dirname __filename fs process serde cryptography datetime regex stdio luau url semver archive sqlite mongo buffer print assert pcall error tostring tonumber pairs ipairs select".split(" ");
   var kw = {}, gl = {};
   LUAU_KW.forEach(function (w) { kw[w] = 1; });
   LUAU_GLOBAL.forEach(function (w) { gl[w] = 1; });

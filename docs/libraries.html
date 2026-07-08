@@ -30,7 +30,25 @@
     <article class="doc-page">
       <p class="eyebrow">Guides</p>
       <h1>Including libraries</h1>
-      <p>Lehua ships with its own libraries, like <code>fs</code> and <code>process</code>. They are opt in per file. To use one, add an include header at the top of the file. Only the libraries you include get set up, which keeps the final executable light.</p>
+      <p>Lehua ships with its own libraries. They are opt in per file. To use one, add an include header at the top of the file. Only the libraries you include get set up, which keeps the final executable light.</p>
+      <table>
+      <thead><tr><th>Library</th><th>What it does</th></tr></thead>
+      <tbody>
+      <tr><td><a href="fs.html"><code>fs</code></a></td><td>Files, folders, and paths.</td></tr>
+      <tr><td><a href="process.html"><code>process</code></a></td><td>Arguments, environment, running programs, system info.</td></tr>
+      <tr><td><a href="serde.html"><code>serde</code></a></td><td>Encode and decode JSON, YAML, and TOML.</td></tr>
+      <tr><td><a href="cryptography.html"><code>cryptography</code></a></td><td>Hashing, compression, base64, encryption, passwords, random.</td></tr>
+      <tr><td><a href="datetime.html"><code>datetime</code></a></td><td>Dates and times as objects you can format and compare.</td></tr>
+      <tr><td><a href="regex.html"><code>regex</code></a></td><td>Real regular expressions alongside Luau's string patterns.</td></tr>
+      <tr><td><a href="stdio.html"><code>stdio</code></a></td><td>Terminal input, output, prompts, and colors.</td></tr>
+      <tr><td><a href="luau.html"><code>luau</code></a></td><td>Load and run Luau code built at runtime.</td></tr>
+      <tr><td><a href="url.html"><code>url</code></a></td><td>Parse, build, and encode URLs and query strings.</td></tr>
+      <tr><td><a href="semver.html"><code>semver</code></a></td><td>Parse and compare semantic version numbers.</td></tr>
+      <tr><td><a href="archive.html"><code>archive</code></a></td><td>Create and extract zip and tar archives.</td></tr>
+      <tr><td><a href="sqlite.html"><code>sqlite</code></a></td><td>A real SQL database in a single local file.</td></tr>
+      <tr><td><a href="mongo.html"><code>mongo</code></a></td><td>Talk to MongoDB clusters, databases, and collections.</td></tr>
+      </tbody>
+      </table>
       <div class="codeblock"><div class="window-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="window-title">src/main.luau</span></div><pre><code class="language-luau">--#include[fs, process]
 
 local text = fs.read("./data.txt")

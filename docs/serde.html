@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The serde library · Lehua</title>
+<meta name="description" content="The serde library. Lehua is a standalone Luau runtime that compiles to a single executable.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='6' fill='%23d94a3d'/%3E%3Cg fill='%23e5675b'%3E%3Cellipse cx='16' cy='6' rx='3.4' ry='5'/%3E%3Cellipse cx='16' cy='26' rx='3.4' ry='5'/%3E%3Cellipse cx='6' cy='16' rx='5' ry='3.4'/%3E%3Cellipse cx='26' cy='16' rx='5' ry='3.4'/%3E%3C/g%3E%3Ccircle cx='16' cy='16' r='3' fill='%23ffd24d'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="assets/styles.css">
+<script>(function(){try{var t=localStorage.getItem('lehua-theme');if(!t)t=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light';document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="navbar">
+  <button id="menu-btn" class="icon-btn" aria-label="Open menu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16" stroke-linecap="round"/></svg></button>
+  <a class="brand" href="index.html"><svg viewBox="0 0 32 32"><circle cx="16" cy="16" r="6" fill="#d94a3d"/><g fill="#e5675b"><ellipse cx="16" cy="6" rx="3.4" ry="5"/><ellipse cx="16" cy="26" rx="3.4" ry="5"/><ellipse cx="6" cy="16" rx="5" ry="3.4"/><ellipse cx="26" cy="16" rx="5" ry="3.4"/></g><circle cx="16" cy="16" r="3" fill="#ffd24d"/></svg> Lehua</a>
+  <div class="nav-spacer"></div>
+  <nav class="nav-links">
+    <a class="docs" href="introduction.html">Docs</a>
+    <a class="gh" href="https://github.com/thekingofspace/LehuaLang"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.58 2 12.25c0 4.53 2.87 8.37 6.84 9.73.5.1.68-.22.68-.49v-1.7c-2.78.62-3.37-1.22-3.37-1.22-.45-1.18-1.11-1.5-1.11-1.5-.91-.64.07-.62.07-.62 1 .07 1.53 1.06 1.53 1.06.9 1.58 2.36 1.12 2.94.86.09-.67.35-1.12.63-1.38-2.22-.26-4.56-1.14-4.56-5.07 0-1.12.39-2.03 1.03-2.75-.1-.26-.45-1.3.1-2.71 0 0 .84-.28 2.75 1.05a9.3 9.3 0 015 0c1.91-1.33 2.75-1.05 2.75-1.05.55 1.41.2 2.45.1 2.71.64.72 1.03 1.63 1.03 2.75 0 3.94-2.34 4.81-4.57 5.06.36.32.68.94.68 1.9v2.82c0 .27.18.6.69.49A10.02 10.02 0 0022 12.25C22 6.58 17.52 2 12 2z"/></svg> GitHub</a>
+  </nav>
+  <button id="theme-btn" class="icon-btn" aria-label="Toggle theme"><svg id="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z" stroke-linejoin="round"/></svg><svg id="icon-sun" style="display:none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.4 1.4M17.6 17.6L19 19M19 5l-1.4 1.4M6.4 17.6L5 19" stroke-linecap="round"/></svg></button>
+</header>
+<div class="backdrop" id="backdrop"></div>
+<div class="layout">
+  <aside class="sidebar" id="sidebar">
+    <label class="side-search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3" stroke-linecap="round"/></svg><input id="side-search" type="text" placeholder="Search docs" aria-label="Search the docs"><kbd>Ctrl K</kbd></label>
+    <nav id="side-nav" class="side-nav"></nav>
+  </aside>
+  <main class="content">
+    <article class="doc-page">
+<p class="eyebrow">Library Reference</p>
+<h1>The serde library</h1>
+<p class="lead">The <code>serde</code> library turns Luau values into text and back. It speaks JSON, YAML, and TOML through one pair of functions, so reading a config file or writing an API payload is a single call.</p>
+
+<h2>Including serde</h2>
+<div class="codeblock"><pre><code class="language-luau">--#include[serde]</code></pre></div>
+
+<h2>Formats</h2>
+<p>Every function takes the format name as its first argument. The name is not case sensitive.</p>
+<table>
+<thead><tr><th>Name</th><th>Format</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td><code>"json"</code></td><td>JSON</td><td>The safe default for data exchange.</td></tr>
+<tr><td><code>"yaml"</code></td><td>YAML</td><td><code>"yml"</code> also works. Output is always indented.</td></tr>
+<tr><td><code>"toml"</code></td><td>TOML</td><td>The top level value must be a table with string keys.</td></tr>
+</tbody>
+</table>
+<p><code>serde.formats</code> is an array of these names, handy for showing what a program accepts.</p>
+
+<h2>Encoding</h2>
+<p><code>serde.encode(format, data, pretty?)</code> returns the value as a string. Pass <code>true</code> as the third argument for an indented, human friendly layout. That matters for <code>json</code> and <code>toml</code>; YAML is always readable.</p>
+<div class="codeblock"><div class="window-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="window-title">src/main.luau</span></div><pre><code class="language-luau">--#include[serde, fs]
+
+local config = {
+    name = "my-app",
+    version = 3,
+    tags = { "fast", "small" },
+}
+
+print(serde.encode("json", config))
+-- {"name":"my-app","tags":["fast","small"],"version":3}
+
+fs.write("./config.toml", serde.encode("toml", config, true))</code></pre></div>
+
+<h2>Decoding</h2>
+<p><code>serde.decode(format, text)</code> parses a string and returns the value. Bad input raises a Lua error with the parser's message, so wrap the call in <code>pcall</code> when the text comes from outside your program.</p>
+<div class="codeblock"><div class="window-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="window-title">src/main.luau</span></div><pre><code class="language-luau">--#include[serde, fs]
+
+local config = serde.decode("toml", fs.read("./config.toml"))
+print(config.name, config.version)
+
+local ok, data = pcall(serde.decode, "json", userInput)
+if not ok then
+    print("that was not valid JSON")
+end</code></pre></div>
+
+<h2>Null and empty tables</h2>
+<p>Luau has no null value and cannot tell an empty array from an empty map, so two helpers fill the gap.</p>
+<table>
+<thead><tr><th>Helper</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td><code>serde.null</code></td><td>Encodes as <code>null</code>. When decoding, nulls simply become <code>nil</code>, which means the key disappears from the table.</td></tr>
+<tr><td><code>serde.array(t?)</code></td><td>Marks a table as an array so an empty one encodes as <code>[]</code> instead of <code>{}</code>. With no argument it returns a fresh empty array. Tables that already have items sort this out on their own.</td></tr>
+</tbody>
+</table>
+<div class="codeblock"><div class="window-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="window-title">src/main.luau</span></div><pre><code class="language-luau">print(serde.encode("json", { items = serde.array(), note = serde.null }))
+-- {"items":[],"note":null}</code></pre></div>
+
+<h2>What converts and what does not</h2>
+<p>Strings, numbers, booleans, and tables of those all convert. A table with numbered items starting at 1 becomes an array — and any named keys sitting in the same table are dropped, so keep list-style and map-style data in separate tables. A table with only named keys becomes a map. Functions, userdata, tables that contain themselves, and tables nested more than 128 levels deep cannot be encoded and raise an error. TOML date values decode as plain strings.</p>
+</article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer>Lehua is built in Rust on mlua and tokio. Made for people who love Luau.</footer>
+<script src="assets/site.js" defer></script>
+</body>
+</html>

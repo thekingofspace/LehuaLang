@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The mongo library · Lehua</title>
+<meta name="description" content="The mongo library. Lehua is a standalone Luau runtime that compiles to a single executable.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='6' fill='%23d94a3d'/%3E%3Cg fill='%23e5675b'%3E%3Cellipse cx='16' cy='6' rx='3.4' ry='5'/%3E%3Cellipse cx='16' cy='26' rx='3.4' ry='5'/%3E%3Cellipse cx='6' cy='16' rx='5' ry='3.4'/%3E%3Cellipse cx='26' cy='16' rx='5' ry='3.4'/%3E%3C/g%3E%3Ccircle cx='16' cy='16' r='3' fill='%23ffd24d'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="assets/styles.css">
+<script>(function(){try{var t=localStorage.getItem('lehua-theme');if(!t)t=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light';document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="navbar">
+  <button id="menu-btn" class="icon-btn" aria-label="Open menu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16" stroke-linecap="round"/></svg></button>
+  <a class="brand" href="index.html"><svg viewBox="0 0 32 32"><circle cx="16" cy="16" r="6" fill="#d94a3d"/><g fill="#e5675b"><ellipse cx="16" cy="6" rx="3.4" ry="5"/><ellipse cx="16" cy="26" rx="3.4" ry="5"/><ellipse cx="6" cy="16" rx="5" ry="3.4"/><ellipse cx="26" cy="16" rx="5" ry="3.4"/></g><circle cx="16" cy="16" r="3" fill="#ffd24d"/></svg> Lehua</a>
+  <div class="nav-spacer"></div>
+  <nav class="nav-links">
+    <a class="docs" href="introduction.html">Docs</a>
+    <a class="gh" href="https://github.com/thekingofspace/LehuaLang"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.58 2 12.25c0 4.53 2.87 8.37 6.84 9.73.5.1.68-.22.68-.49v-1.7c-2.78.62-3.37-1.22-3.37-1.22-.45-1.18-1.11-1.5-1.11-1.5-.91-.64.07-.62.07-.62 1 .07 1.53 1.06 1.53 1.06.9 1.58 2.36 1.12 2.94.86.09-.67.35-1.12.63-1.38-2.22-.26-4.56-1.14-4.56-5.07 0-1.12.39-2.03 1.03-2.75-.1-.26-.45-1.3.1-2.71 0 0 .84-.28 2.75 1.05a9.3 9.3 0 015 0c1.91-1.33 2.75-1.05 2.75-1.05.55 1.41.2 2.45.1 2.71.64.72 1.03 1.63 1.03 2.75 0 3.94-2.34 4.81-4.57 5.06.36.32.68.94.68 1.9v2.82c0 .27.18.6.69.49A10.02 10.02 0 0022 12.25C22 6.58 17.52 2 12 2z"/></svg> GitHub</a>
+  </nav>
+  <button id="theme-btn" class="icon-btn" aria-label="Toggle theme"><svg id="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z" stroke-linejoin="round"/></svg><svg id="icon-sun" style="display:none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.4 1.4M17.6 17.6L19 19M19 5l-1.4 1.4M6.4 17.6L5 19" stroke-linecap="round"/></svg></button>
+</header>
+<div class="backdrop" id="backdrop"></div>
+<div class="layout">
+  <aside class="sidebar" id="sidebar">
+    <label class="side-search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3" stroke-linecap="round"/></svg><input id="side-search" type="text" placeholder="Search docs" aria-label="Search the docs"><kbd>Ctrl K</kbd></label>
+    <nav id="side-nav" class="side-nav"></nav>
+  </aside>
+  <main class="content">
+    <article class="doc-page">
+<p class="eyebrow">Library Reference</p>
+<h1>The mongo library</h1>
+<p class="lead">The <code>mongo</code> library talks to MongoDB. You connect to a cluster with a connection string, walk down to a database and a collection, and work with documents as plain Luau tables.</p>
+
+<h2>Including mongo</h2>
+<div class="codeblock"><pre><code class="language-luau">--#include[mongo]</code></pre></div>
+
+<h2>Connecting</h2>
+<p><code>mongo.connect(connectionString, options?)</code> returns a cluster object. Unlike <code>sqlite</code>, mongo always needs a connection string — there is no local file mode. The options table accepts <code>serverSelectionTimeoutMs</code>, <code>connectTimeoutMs</code>, and <code>appName</code>.</p>
+<div class="codeblock"><div class="window-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="window-title">src/main.luau</span></div><pre><code class="language-luau">--#include[mongo]
+
+local cluster = mongo.connect("mongodb+srv://user:pass@cluster0.example.mongodb.net/myapp")
+local db = cluster:defaultDatabase() or cluster:database("myapp")
+local users = db:collection("users")</code></pre></div>
+<div class="note"><div class="note-title">Connecting is lazy</div><p><code>connect</code> only checks that the connection string makes sense. The first real operation reaches the server, and that is where a bad address or password shows up as an error. Set <code>serverSelectionTimeoutMs</code> if the default half minute wait is too long.</p></div>
+
+<h2>Cluster and database objects</h2>
+<table>
+<thead><tr><th>Method</th><th>Returns</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>cluster:database(name)</code></td><td>database</td><td>The named database. It is created on first write.</td></tr>
+<tr><td><code>cluster:defaultDatabase()</code></td><td>database?</td><td>The database named in the connection string, if any.</td></tr>
+<tr><td><code>cluster:databases()</code></td><td><code>{ string }</code></td><td>The names of the databases on the server.</td></tr>
+<tr><td><code>cluster:close()</code></td><td><code>nil</code></td><td>Shuts the connection down cleanly.</td></tr>
+<tr><td><code>db:name()</code></td><td><code>string</code></td><td>The database name.</td></tr>
+<tr><td><code>db:collection(name)</code></td><td>collection</td><td>The named collection. It is created on first write.</td></tr>
+<tr><td><code>db:collections()</code></td><td><code>{ string }</code></td><td>The names of the collections in the database.</td></tr>
+<tr><td><code>db:createCollection(name)</code></td><td><code>nil</code></td><td>Creates a collection explicitly.</td></tr>
+<tr><td><code>db:runCommand(command)</code></td><td><code>table</code></td><td>Runs a raw database command, like <code>{ ping = 1 }</code>.</td></tr>
+<tr><td><code>db:drop()</code></td><td><code>nil</code></td><td>Deletes the database and every collection in it.</td></tr>
+</tbody>
+</table>
+
+<h2>Working with documents</h2>
+<table>
+<thead><tr><th>Method</th><th>Returns</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>coll:insertOne(doc)</code></td><td>id</td><td>Inserts one document and returns its id.</td></tr>
+<tr><td><code>coll:insertMany(docs)</code></td><td><code>{ id }</code></td><td>Inserts an array of documents and returns their ids in order.</td></tr>
+<tr><td><code>coll:findOne(filter?, options?)</code></td><td><code>table?</code></td><td>The first matching document, or <code>nil</code>.</td></tr>
+<tr><td><code>coll:find(filter?, options?)</code></td><td><code>{ table }</code></td><td>Every matching document. See the options below.</td></tr>
+<tr><td><code>coll:updateOne(filter, update, options?)</code></td><td><code>table</code></td><td>Applies operators like <code>$set</code> to the first match. Returns <code>{ matched, modified, upsertedId? }</code>. Pass <code>{ upsert = true }</code> to insert when nothing matches.</td></tr>
+<tr><td><code>coll:updateMany(filter, update, options?)</code></td><td><code>table</code></td><td>The same, for every match.</td></tr>
+<tr><td><code>coll:replaceOne(filter, replacement, options?)</code></td><td><code>table</code></td><td>Swaps the whole document for a new one.</td></tr>
+<tr><td><code>coll:deleteOne(filter)</code></td><td><code>number</code></td><td>Deletes the first match. Returns how many were deleted.</td></tr>
+<tr><td><code>coll:deleteMany(filter)</code></td><td><code>number</code></td><td>Deletes every match.</td></tr>
+<tr><td><code>coll:count(filter?)</code></td><td><code>number</code></td><td>How many documents match.</td></tr>
+<tr><td><code>coll:distinct(field, filter?)</code></td><td><code>{ any }</code></td><td>The distinct values of one field.</td></tr>
+<tr><td><code>coll:aggregate(pipeline)</code></td><td><code>{ table }</code></td><td>Runs an aggregation pipeline, an array of stage documents.</td></tr>
+<tr><td><code>coll:createIndex(keys, options?)</code></td><td><code>string</code></td><td>Makes an index and returns its name. Options: <code>unique</code>, <code>name</code>, <code>sparse</code>.</td></tr>
+<tr><td><code>coll:indexes()</code></td><td><code>{ string }</code></td><td>The names of the indexes.</td></tr>
+<tr><td><code>coll:dropIndex(name)</code></td><td><code>nil</code></td><td>Removes one index.</td></tr>
+<tr><td><code>coll:drop()</code></td><td><code>nil</code></td><td>Deletes the collection.</td></tr>
+</tbody>
+</table>
+
+<h3>Find options</h3>
+<p>The second argument to <code>find</code> and <code>findOne</code> is a table:</p>
+<table>
+<thead><tr><th>Option</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td><code>sort</code></td><td>Which order to return documents in: <code>{ age = -1 }</code> for one field, or an array of pairs like <code>{ {"age", -1}, {"name", 1} }</code> when the order of the sort fields matters.</td></tr>
+<tr><td><code>limit</code></td><td>The most documents to return.</td></tr>
+<tr><td><code>skip</code></td><td>How many matches to jump over first.</td></tr>
+<tr><td><code>page</code>, <code>pageSize</code></td><td>Pagination sugar: <code>{ page = 3, pageSize = 20 }</code> means skip 40 and return at most 20. <code>pageSize</code> defaults to 20. Explicit <code>limit</code> and <code>skip</code> win if you pass both.</td></tr>
+<tr><td><code>projection</code></td><td>Which fields to include or leave out, like <code>{ name = 1, _id = 0 }</code>.</td></tr>
+</tbody>
+</table>
+
+<h2>Filters</h2>
+<p>A filter is a table of the fields a document must have: <code>{ name = "ada" }</code>. For anything beyond exact equality, helper functions build the standard MongoDB operators for you.</p>
+<table>
+<thead><tr><th>Helper</th><th>Matches when the field...</th></tr></thead>
+<tbody>
+<tr><td><code>mongo.eq(v)</code>, <code>mongo.ne(v)</code></td><td>equals / does not equal the value</td></tr>
+<tr><td><code>mongo.gt(v)</code>, <code>mongo.gte(v)</code>, <code>mongo.lt(v)</code>, <code>mongo.lte(v)</code></td><td>is greater / at least / less / at most</td></tr>
+<tr><td><code>mongo.between(min, max)</code></td><td>is between the two values, ends included</td></tr>
+<tr><td><code>mongo.inList(values)</code>, <code>mongo.notInList(values)</code></td><td>is one of / none of the values</td></tr>
+<tr><td><code>mongo.exists(flag?)</code></td><td>exists (<code>true</code>, the default) or is missing (<code>false</code>)</td></tr>
+<tr><td><code>mongo.regex(pattern, flags?)</code></td><td>matches a regular expression, for example flags <code>"i"</code> for any capitalization</td></tr>
+<tr><td><code>mongo.allIn(values)</code></td><td>is an array containing all the values</td></tr>
+<tr><td><code>mongo.size(n)</code></td><td>is an array with exactly n items</td></tr>
+<tr><td><code>mongo.notOf(operator)</code></td><td>fails another operator test</td></tr>
+</tbody>
+</table>
+<p>Combine whole filters with <code>mongo.anyOf({ ... })</code> (any may match), <code>mongo.allOf({ ... })</code> (all must match), and <code>mongo.noneOf({ ... })</code> (none may match).</p>
+<div class="codeblock"><div class="window-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="window-title">src/main.luau</span></div><pre><code class="language-luau">local adults = users:find(
+    { age = mongo.gte(18), deletedAt = mongo.exists(false) },
+    { sort = { age = -1 }, page = 1, pageSize = 25 }
+)
+
+local either = users:find(mongo.anyOf({
+    { role = "admin" },
+    { name = mongo.regex("^ada", "i") },
+}))
+
+users:updateOne({ _id = someId }, { ["$set"] = { active = true } })</code></pre></div>
+
+<h2>Ids and how values convert</h2>
+<p>Every document gets an <code>_id</code>. <code>mongo.objectId()</code> makes a fresh id object; <code>mongo.objectId(hex)</code> rebuilds one from its 24 character hex text; <code>mongo.isObjectId(value)</code> checks for one. Id objects convert to real MongoDB ObjectIds when written and come back as the same kind of object when read. <code>tostring(id)</code> or <code>id:hex()</code> gives the hex text, and two ids compare equal with <code>==</code> when they hold the same value.</p>
+<table>
+<thead><tr><th>Luau value</th><th>Stored as</th><th>Comes back as</th></tr></thead>
+<tbody>
+<tr><td><code>string</code></td><td>String, or Binary if not valid text</td><td><code>string</code></td></tr>
+<tr><td><code>number</code></td><td>Int64 or Double</td><td><code>number</code></td></tr>
+<tr><td><code>boolean</code></td><td>Boolean</td><td><code>boolean</code></td></tr>
+<tr><td>table</td><td>Document, or Array when it has numbered items</td><td>table</td></tr>
+<tr><td>a DateTime object</td><td>a real BSON date</td><td>a DateTime object again</td></tr>
+<tr><td>an id from <code>mongo.objectId</code></td><td>ObjectId</td><td>an id object again</td></tr>
+<tr><td><code>mongo.null</code></td><td>Null</td><td><code>mongo.null</code></td></tr>
+<tr><td>a <code>buffer</code></td><td>Binary</td><td><code>string</code></td></tr>
+</tbody>
+</table>
+<div class="codeblock"><div class="window-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="window-title">src/main.luau</span></div><pre><code class="language-luau">--#include[mongo, datetime]
+
+local id = users:insertOne({ name = "ada", joined = datetime.now() })
+local doc = users:findOne({ _id = id })
+print(doc.joined:format("%B %d, %Y"))</code></pre></div>
+<div class="note"><div class="note-title">Empty tables</div><p>Luau cannot tell an empty array from an empty document, so an empty table becomes an empty document. If a field must be an empty array, mark the table with <code>serde.array</code> from the <a href="serde.html">serde library</a> — mongo honors the same marker.</p></div>
+</article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer>Lehua is built in Rust on mlua and tokio. Made for people who love Luau.</footer>
+<script src="assets/site.js" defer></script>
+</body>
+</html>
