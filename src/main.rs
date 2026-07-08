@@ -35,8 +35,17 @@ fn enable_ansi() {
 #[cfg(not(windows))]
 fn enable_ansi() {}
 
+#[cfg(any(feature = "lib-net", feature = "lib-mongo"))]
+fn install_tls_provider() {
+    let _ = rustls::crypto::ring::default_provider().install_default();
+}
+
+#[cfg(not(any(feature = "lib-net", feature = "lib-mongo")))]
+fn install_tls_provider() {}
+
 fn main() -> ExitCode {
     enable_ansi();
+    install_tls_provider();
     let args: Vec<String> = std::env::args_os()
         .skip(1)
         .map(|a| a.to_string_lossy().into_owned())

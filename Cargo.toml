@@ -53,7 +53,7 @@ lib-url = ["dep:url", "dep:percent-encoding"]
 lib-semver = ["dep:semver"]
 lib-archive = ["dep:zip", "dep:tar"]
 lib-sqlite = ["dep:rusqlite", "lib-datetime"]
-lib-mongo = ["dep:mongodb", "dep:futures-util", "lib-datetime"]
+lib-mongo = ["dep:mongodb", "dep:futures-util", "dep:rustls", "lib-datetime"]
 lib-random = ["dep:getrandom"]
 lib-task = []
 lib-net = [
@@ -64,6 +64,7 @@ lib-net = [
     "dep:suppaftp",
     "dep:futures-util",
     "dep:bytes",
+    "dep:rustls",
     "tokio/net",
     "tokio/io-util",
 ]
@@ -103,6 +104,7 @@ tokio-tungstenite = { version = "0.29", default-features = false, features = ["c
 hickory-resolver = { version = "0.26", optional = true }
 interprocess = { version = "2", features = ["tokio"], optional = true }
 suppaftp = { version = "10", optional = true }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"], optional = true }
 bytes = { version = "1", optional = true }
 libloading = "0.9"
 flate2 = "1.1"
