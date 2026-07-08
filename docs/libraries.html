@@ -30,7 +30,7 @@
     <article class="doc-page">
       <p class="eyebrow">Guides</p>
       <h1>Including libraries</h1>
-      <p>Lehua ships with its own libraries. They are opt in per file. To use one, add an include header at the top of the file. Only the libraries you include get set up, which keeps the final executable light.</p>
+      <p>Lehua ships with its own libraries. They are opt in per file. To use one, add an include header at the top of the file. Only the libraries you include are set up and available to your code - and when <a href="building.html">building a program</a>, Lehua can compile a runtime that only contains those libraries.</p>
       <table>
       <thead><tr><th>Library</th><th>What it does</th></tr></thead>
       <tbody>
@@ -47,6 +47,9 @@
       <tr><td><a href="archive.html"><code>archive</code></a></td><td>Create and extract zip and tar archives.</td></tr>
       <tr><td><a href="sqlite.html"><code>sqlite</code></a></td><td>A real SQL database in a single local file.</td></tr>
       <tr><td><a href="mongo.html"><code>mongo</code></a></td><td>Talk to MongoDB clusters, databases, and collections.</td></tr>
+      <tr><td><a href="net.html"><code>net</code></a></td><td>HTTP, TCP, UDP, IPC, DNS, WebSocket, and FTP.</td></tr>
+      <tr><td><a href="random.html"><code>random</code></a></td><td>Seedable random number generator objects.</td></tr>
+      <tr><td><a href="task.html"><code>task</code></a></td><td>Spawn, defer, delay, and schedule work in coroutines.</td></tr>
       </tbody>
       </table>
       <div class="codeblock"><div class="window-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="window-title">src/main.luau</span></div><pre><code class="language-luau">--#include[fs, process]

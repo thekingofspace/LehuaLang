@@ -263,6 +263,40 @@ impl UserData for LuaSqlite {
             })
         });
 
+        m.add_method("info", |lua, this, ()| {
+            this.with_conn(|conn| {
+                let t = lua.create_table()?;
+                let int = |sql: &str| -> mlua::Result<i64> {
+                    conn.query_row(sql, [], |r| r.get(0))
+                        .map_err(mlua::Error::external)
+                };
+                let text = |sql: &str| -> mlua::Result<String> {
+                    conn.query_row(sql, [], |r| r.get(0))
+                        .map_err(mlua::Error::external)
+                };
+                t.set("path", this.path.clone())?;
+                t.set(
+                    "readOnly",
+                    conn.is_readonly("main")
+                        .map_err(mlua::Error::external)?,
+                )?;
+                t.set("autocommit", conn.is_autocommit())?;
+                t.set("totalChanges", conn.total_changes() as i64)?;
+                t.set("lastInsertId", conn.last_insert_rowid())?;
+                t.set("sqliteVersion", rusqlite::version())?;
+                t.set("journalMode", text("PRAGMA journal_mode")?)?;
+                t.set("encoding", text("PRAGMA encoding")?)?;
+                t.set("foreignKeys", int("PRAGMA foreign_keys")? == 1)?;
+                t.set("busyTimeoutMs", int("PRAGMA busy_timeout")?)?;
+                t.set("pageSize", int("PRAGMA page_size")?)?;
+                t.set("pageCount", int("PRAGMA page_count")?)?;
+                t.set("cacheSize", int("PRAGMA cache_size")?)?;
+                t.set("userVersion", int("PRAGMA user_version")?)?;
+                t.set("schemaVersion", int("PRAGMA schema_version")?)?;
+                Ok(t)
+            })
+        });
+
         m.add_method("isOpen", |_, this, ()| Ok(this.conn.borrow().is_some()));
 
         m.add_method("close", |_, this, ()| {
@@ -279,8 +313,123 @@ impl UserData for LuaSqlite {
     }
 }
 
-fn open(conn: rusqlite::Result<Connection>, path: String) -> mlua::Result<LuaSqlite> {
+const JOURNAL_MODES: &[&str] = &["delete", "truncate", "persist", "memory", "wal", "off"];
+
+fn open_flags(opts: &Option<Table>) -> mlua::Result<rusqlite::OpenFlags> {
+    use rusqlite::OpenFlags;
+    let mut read_only = false;
+    let mut create = true;
+    if let Some(o) = opts {
+        read_only = o.get::<Option<bool>>("readOnly")?.unwrap_or(false);
+        create = o.get::<Option<bool>>("create")?.unwrap_or(true);
+    }
+    let mut flags = OpenFlags::SQLITE_OPEN_NO_MUTEX | OpenFlags::SQLITE_OPEN_URI;
+    if read_only {
+        flags |= OpenFlags::SQLITE_OPEN_READ_ONLY;
+    } else {
+        flags |= OpenFlags::SQLITE_OPEN_READ_WRITE;
+        if create {
+            flags |= OpenFlags::SQLITE_OPEN_CREATE;
+        }
+    }
+    Ok(flags)
+}
+
+fn run_pragma(conn: &Connection, name: &str, literal: &str) -> mlua::Result<()> {
+    match conn.query_row(&format!("PRAGMA {name} = {literal}"), [], |_| Ok(())) {
+        Ok(()) => Ok(()),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(()),
+        Err(e) => Err(mlua::Error::external(e)),
+    }
+}
+
+fn apply_open_opts(conn: &Connection, opts: &Option<Table>) -> mlua::Result<()> {
+    let Some(o) = opts else { return Ok(()) };
+    if let Some(password) = o.get::<Option<String>>("password")? {
+        run_pragma(conn, "key", &format!("'{}'", password.replace('\'', "''")))?;
+        let cipher: Result<String, _> =
+            conn.query_row("PRAGMA cipher_version", [], |r| r.get(0));
+        if cipher.is_err() {
+            return Err(LehuaError::msg(
+                "sqlite: this runtime was built without SQLCipher, so password protected databases are not supported",
+            )
+            .into());
+        }
+    }
+    if let Some(ms) = o.get::<Option<u64>>("busyTimeoutMs")? {
+        conn.busy_timeout(std::time::Duration::from_millis(ms))
+            .map_err(mlua::Error::external)?;
+    }
+    if let Some(fk) = o.get::<Option<bool>>("foreignKeys")? {
+        conn.pragma_update(None, "foreign_keys", fk)
+            .map_err(mlua::Error::external)?;
+    }
+    if let Some(mode) = o.get::<Option<String>>("journalMode")? {
+        let mode = mode.trim().to_ascii_lowercase();
+        if !JOURNAL_MODES.contains(&mode.as_str()) {
+            return Err(LehuaError::msg(format!(
+                "sqlite: unknown journalMode '{mode}' (supported: {})",
+                JOURNAL_MODES.join(", ")
+            ))
+            .into());
+        }
+        run_pragma(conn, "journal_mode", &mode)?;
+    }
+    if let Some(kb) = o.get::<Option<i64>>("cacheSizeKb")? {
+        conn.pragma_update(None, "cache_size", -kb.max(0))
+            .map_err(mlua::Error::external)?;
+    }
+    if let Some(pragmas) = o.get::<Option<Table>>("pragmas")? {
+        for entry in pragmas.pairs::<String, Value>() {
+            let (name, value) = entry?;
+            if !name
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b == b'_')
+                || name.is_empty()
+            {
+                return Err(
+                    LehuaError::msg(format!("sqlite: invalid pragma name '{name}'")).into(),
+                );
+            }
+            let literal = match &value {
+                Value::Boolean(b) => String::from(if *b { "1" } else { "0" }),
+                Value::Integer(i) => i.to_string(),
+                Value::Number(n) => n.to_string(),
+                Value::String(s) => {
+                    let text = s.to_str()?;
+                    if !text
+                        .bytes()
+                        .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+                        || text.is_empty()
+                    {
+                        return Err(LehuaError::msg(format!(
+                            "sqlite: invalid value for pragma '{name}'"
+                        ))
+                        .into());
+                    }
+                    text.to_string()
+                }
+                other => {
+                    return Err(LehuaError::msg(format!(
+                        "sqlite: pragma '{name}' must be a string, number, or boolean, got {}",
+                        other.type_name()
+                    ))
+                    .into())
+                }
+            };
+            run_pragma(conn, &name, &literal)?;
+        }
+    }
+    Ok(())
+}
+
+fn open(
+    conn: rusqlite::Result<Connection>,
+    path: String,
+    opts: &Option<Table>,
+) -> mlua::Result<LuaSqlite> {
     let conn = conn.map_err(|e| LehuaError::msg(format!("sqlite: could not open: {e}")))?;
+    apply_open_opts(&conn, opts)?;
     Ok(LuaSqlite {
         conn: RefCell::new(Some(conn)),
         path,
@@ -296,30 +445,113 @@ pub fn build(ctx: &LibCtx) -> mlua::Result<Value> {
         let scope = scope.clone();
         t.set(
             "fromLocal",
-            lua.create_function(move |_, path: String| {
+            lua.create_function(move |_, (path, opts): (String, Option<Table>)| {
                 let full = scope.resolve(&path)?;
-                if let Some(parent) = full.parent() {
-                    std::fs::create_dir_all(parent).map_err(mlua::Error::external)?;
+                let flags = open_flags(&opts)?;
+                if flags.contains(rusqlite::OpenFlags::SQLITE_OPEN_CREATE) {
+                    if let Some(parent) = full.parent() {
+                        std::fs::create_dir_all(parent).map_err(mlua::Error::external)?;
+                    }
                 }
                 open(
-                    Connection::open(&full),
+                    Connection::open_with_flags(&full, flags),
                     full.to_string_lossy().into_owned(),
+                    &opts,
                 )
             })?,
         )?;
     }
 
-    t.set(
-        "fromConnection",
-        lua.create_function(|_, connection: String| {
-            open(Connection::open(&connection), connection.clone())
-        })?,
-    )?;
+    {
+        let scope = scope.clone();
+        t.set(
+            "fromConnection",
+            lua.create_function(move |_, (info, opts): (Value, Option<Table>)| {
+                match info {
+                    Value::String(s) => {
+                        let connection = s.to_str()?.to_string();
+                        let flags = open_flags(&opts)?;
+                        open(
+                            Connection::open_with_flags(&connection, flags),
+                            connection.clone(),
+                            &opts,
+                        )
+                    }
+                    Value::Table(info) => {
+                        let file = info
+                            .get::<Option<String>>("file")?
+                            .or(info.get::<Option<String>>("path")?)
+                            .unwrap_or_else(|| String::from(":memory:"));
+                        let target = if file == ":memory:" || file.starts_with("file:") {
+                            file
+                        } else {
+                            let full = scope.resolve(&file)?;
+                            let create =
+                                info.get::<Option<bool>>("create")?.unwrap_or(true);
+                            let read_only =
+                                info.get::<Option<bool>>("readOnly")?.unwrap_or(false);
+                            if create && !read_only {
+                                if let Some(parent) = full.parent() {
+                                    std::fs::create_dir_all(parent)
+                                        .map_err(mlua::Error::external)?;
+                                }
+                            }
+                            let mut params: Vec<String> = Vec::new();
+                            if let Some(cache) = info.get::<Option<String>>("cache")? {
+                                let cache = cache.trim().to_ascii_lowercase();
+                                if cache != "shared" && cache != "private" {
+                                    return Err(LehuaError::msg(
+                                        "sqlite: cache must be 'shared' or 'private'",
+                                    )
+                                    .into());
+                                }
+                                params.push(format!("cache={cache}"));
+                            }
+                            if info.get::<Option<bool>>("immutable")?.unwrap_or(false) {
+                                params.push(String::from("immutable=1"));
+                            }
+                            let path = full.to_string_lossy().replace('\\', "/");
+                            let mut encoded = String::with_capacity(path.len());
+                            for c in path.chars() {
+                                match c {
+                                    '?' => encoded.push_str("%3f"),
+                                    '#' => encoded.push_str("%23"),
+                                    '%' => encoded.push_str("%25"),
+                                    other => encoded.push(other),
+                                }
+                            }
+                            if params.is_empty() {
+                                format!("file:{encoded}")
+                            } else {
+                                format!("file:{encoded}?{}", params.join("&"))
+                            }
+                        };
+                        let all_opts = Some(info);
+                        let flags = open_flags(&all_opts)?;
+                        open(
+                            Connection::open_with_flags(&target, flags),
+                            target.clone(),
+                            &all_opts,
+                        )
+                    }
+                    other => Err(LehuaError::msg(format!(
+                        "sqlite.fromConnection expects a connection string or an info table, got {}",
+                        other.type_name()
+                    ))
+                    .into()),
+                }
+            })?,
+        )?;
+    }
 
     t.set(
         "memory",
-        lua.create_function(|_, ()| {
-            open(Connection::open_in_memory(), String::from(":memory:"))
+        lua.create_function(|_, opts: Option<Table>| {
+            open(
+                Connection::open_in_memory(),
+                String::from(":memory:"),
+                &opts,
+            )
         })?,
     )?;
 

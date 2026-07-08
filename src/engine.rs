@@ -23,6 +23,7 @@ pub struct Engine {
     pub resolver: Arc<Resolver>,
     pub entry_id: String,
     pub flat_dirs: bool,
+    #[allow(dead_code)]
     pub args: Vec<String>,
 }
 
@@ -65,8 +66,11 @@ pub struct VmScheduler {
     pub heartbeat: RefCell<Vec<(String, Function)>>,
     pub close: RefCell<Vec<Function>>,
     pub exit_code: Cell<i32>,
+    tasks: Cell<usize>,
+    idle: tokio::sync::Notify,
 }
 
+#[allow(dead_code)]
 impl VmScheduler {
     pub fn bind_heartbeat(&self, name: String, func: Function) {
         let mut hb = self.heartbeat.borrow_mut();
@@ -82,6 +86,28 @@ impl VmScheduler {
         let before = hb.len();
         hb.retain(|(n, _)| n != name);
         hb.len() != before
+    }
+
+    pub fn retain_task(&self) {
+        self.tasks.set(self.tasks.get() + 1);
+    }
+
+    pub fn release_task(&self) {
+        let n = self.tasks.get().saturating_sub(1);
+        self.tasks.set(n);
+        if n == 0 {
+            self.idle.notify_waiters();
+        }
+    }
+
+    pub async fn wait_idle(&self) {
+        while self.tasks.get() > 0 {
+            let notified = self.idle.notified();
+            if self.tasks.get() == 0 {
+                break;
+            }
+            notified.await;
+        }
     }
 
     pub fn run_close(&self) {
@@ -103,8 +129,167 @@ pub fn make_vm(engine: Arc<Engine>) -> Result<(Lua, Rc<VmContext>)> {
             .set_type_info_level(1),
     );
     lua.enable_jit(true);
+    install_pretty_print(&lua)?;
     let ctx = VmContext::new(engine);
     Ok((lua, ctx))
+}
+
+const PRINT_MAX_DEPTH: usize = 6;
+
+fn install_pretty_print(lua: &Lua) -> mlua::Result<()> {
+    let tostring: Function = lua.globals().get("tostring")?;
+    let print_fn = lua.create_function(move |_, args: MultiValue| {
+        use std::io::{IsTerminal, Write};
+        let style = std::io::stdout().is_terminal();
+        let mut out: Vec<u8> = Vec::new();
+        for (i, v) in args.iter().enumerate() {
+            if i > 0 {
+                out.push(b'\t');
+            }
+            format_value(&tostring, v, &mut out, 0, &mut Vec::new(), style)?;
+        }
+        out.push(b'\n');
+        let mut stdout = std::io::stdout().lock();
+        let _ = stdout.write_all(&out);
+        let _ = stdout.flush();
+        Ok(())
+    })?;
+    lua.globals().set("print", print_fn)
+}
+
+fn format_value(
+    tostring: &Function,
+    v: &Value,
+    out: &mut Vec<u8>,
+    depth: usize,
+    path: &mut Vec<usize>,
+    style: bool,
+) -> mlua::Result<()> {
+    match v {
+        Value::Nil => out.extend_from_slice(b"nil"),
+        Value::Boolean(b) => out.extend_from_slice(if *b { b"true" } else { b"false" }),
+        Value::Integer(i) => out.extend_from_slice(i.to_string().as_bytes()),
+        Value::Number(n) => out.extend_from_slice(n.to_string().as_bytes()),
+        Value::String(s) => {
+            if depth == 0 {
+                out.extend_from_slice(&s.as_bytes());
+            } else {
+                quote_string(&s.as_bytes(), out);
+            }
+        }
+        Value::Table(t) => format_table(tostring, t, out, depth, path, style)?,
+        Value::UserData(_) => {
+            let text = tostring.call::<mlua::LuaString>(v.clone())?;
+            if style {
+                out.extend_from_slice(b"\x1b[1;34m[");
+                out.extend_from_slice(&text.as_bytes());
+                out.extend_from_slice(b"]\x1b[0m");
+            } else {
+                out.push(b'[');
+                out.extend_from_slice(&text.as_bytes());
+                out.push(b']');
+            }
+        }
+        Value::LightUserData(_) if *v == Value::NULL => out.extend_from_slice(b"null"),
+        other => {
+            let text = tostring.call::<mlua::LuaString>(other.clone())?;
+            out.extend_from_slice(&text.as_bytes());
+        }
+    }
+    Ok(())
+}
+
+fn format_table(
+    tostring: &Function,
+    t: &mlua::Table,
+    out: &mut Vec<u8>,
+    depth: usize,
+    path: &mut Vec<usize>,
+    style: bool,
+) -> mlua::Result<()> {
+    let ptr = t.to_pointer() as usize;
+    if path.contains(&ptr) || depth >= PRINT_MAX_DEPTH {
+        out.extend_from_slice(b"{...}");
+        return Ok(());
+    }
+    let len = t.raw_len();
+    let mut named: Vec<(Vec<u8>, Value, Value)> = Vec::new();
+    for entry in t.pairs::<Value, Value>() {
+        let (k, v) = entry?;
+        if let Value::Integer(i) = k {
+            if i >= 1 && (i as usize) <= len {
+                continue;
+            }
+        }
+        let mut sort_key = Vec::new();
+        match &k {
+            Value::String(s) => sort_key.extend_from_slice(&s.as_bytes()),
+            other => sort_key.extend_from_slice(
+                tostring.call::<mlua::LuaString>(other.clone())?.as_bytes().as_ref(),
+            ),
+        }
+        named.push((sort_key, k, v));
+    }
+    if len == 0 && named.is_empty() {
+        out.extend_from_slice(b"{}");
+        return Ok(());
+    }
+    named.sort_by(|a, b| a.0.cmp(&b.0));
+    path.push(ptr);
+    out.extend_from_slice(b"{\n");
+    let pad = |out: &mut Vec<u8>, levels: usize| {
+        for _ in 0..levels {
+            out.extend_from_slice(b"    ");
+        }
+    };
+    for i in 1..=len {
+        pad(out, depth + 1);
+        let item: Value = t.raw_get(i)?;
+        format_value(tostring, &item, out, depth + 1, path, style)?;
+        out.extend_from_slice(b",\n");
+    }
+    for (sort_key, k, v) in named {
+        pad(out, depth + 1);
+        if matches!(&k, Value::String(_)) && is_identifier(&sort_key) {
+            out.extend_from_slice(&sort_key);
+        } else {
+            out.push(b'[');
+            format_value(tostring, &k, out, depth + 1, path, style)?;
+            out.push(b']');
+        }
+        out.extend_from_slice(b" = ");
+        format_value(tostring, &v, out, depth + 1, path, style)?;
+        out.extend_from_slice(b",\n");
+    }
+    pad(out, depth);
+    out.push(b'}');
+    path.pop();
+    Ok(())
+}
+
+fn is_identifier(bytes: &[u8]) -> bool {
+    if bytes.is_empty() || bytes[0].is_ascii_digit() {
+        return false;
+    }
+    bytes
+        .iter()
+        .all(|&b| b.is_ascii_alphanumeric() || b == b'_')
+}
+
+fn quote_string(bytes: &[u8], out: &mut Vec<u8>) {
+    out.push(b'"');
+    for &b in bytes {
+        match b {
+            b'"' => out.extend_from_slice(b"\\\""),
+            b'\\' => out.extend_from_slice(b"\\\\"),
+            b'\n' => out.extend_from_slice(b"\\n"),
+            b'\r' => out.extend_from_slice(b"\\r"),
+            b'\t' => out.extend_from_slice(b"\\t"),
+            0x20..=0x7e | 0x80..=0xff => out.push(b),
+            other => out.extend_from_slice(format!("\\{other}").as_bytes()),
+        }
+    }
+    out.push(b'"');
 }
 
 pub async fn run_entry(
@@ -126,7 +311,7 @@ pub async fn run_entry(
 
     match result {
         Ok(v) => {
-            heartbeat_loop(&ctx).await;
+            tokio::join!(heartbeat_loop(&ctx), ctx.sched.wait_idle());
             ctx.sched.run_close();
             Ok(v)
         }

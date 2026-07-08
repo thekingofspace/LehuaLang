@@ -18,7 +18,7 @@ impl UserData for Port {
         methods.add_method("Push", |_, this, value: Value| {
             if value.is_nil() {
                 return Err(mlua::Error::external(LehuaError::msg(
-                    "Port:Push(nil) is not allowed — nil is the closed-channel sentinel returned by Pop",
+                    "Port:Push(nil) is not allowed - nil is the closed-channel sentinel returned by Pop",
                 )));
             }
             let pv = PortableValue::from_lua(&value)?;
@@ -101,7 +101,8 @@ fn spawn_worker(engine: Arc<Engine>, worker_id: String, worker_port: Port, args:
             }
         };
 
-        rt.block_on(async move {
+        let local = tokio::task::LocalSet::new();
+        rt.block_on(local.run_until(async move {
             let (lua, ctx) = match engine::make_vm(engine.clone()) {
                 Ok(pair) => pair,
                 Err(e) => {
@@ -119,7 +120,7 @@ fn spawn_worker(engine: Arc<Engine>, worker_id: String, worker_port: Port, args:
             if let Err(e) = engine::run_entry(lua, ctx, &worker_id, Some(chan), args).await {
                 eprintln!("lehua: worker '{worker_id}' error: {e}");
             }
-        });
+        }));
     });
 
     if let Err(e) = spawned {

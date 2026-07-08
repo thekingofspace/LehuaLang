@@ -3,7 +3,7 @@
 -- `require`, `parallel`, `__dirname`, `__filename` are provided per-module.
 print("Lehua is running from " .. __dirname)
 
--- Roots are packages that live under roots/ — require them by name.
+-- Roots are packages that live under roots/ - require them by name.
 local hello = require("hello")
 print(hello.greet("Lehua"))
 

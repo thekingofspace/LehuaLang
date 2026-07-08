@@ -1,14 +1,72 @@
 [package]
 name = "lehua"
-version = "0.1.2"
+version = "0.2.0"
 edition = "2021"
 rust-version = "1.80"
-description = "Lehua — the next-generation Luau runtime: compiled, multithreaded, batteries-included."
+description = "Lehua - the next-generation Luau runtime: compiled, multithreaded, batteries-included."
 license = "MIT"
 
 [[bin]]
 name = "lehua"
 path = "src/main.rs"
+
+[features]
+default = ["full"]
+full = [
+    "lib-fs",
+    "lib-process",
+    "lib-serde",
+    "lib-cryptography",
+    "lib-datetime",
+    "lib-regex",
+    "lib-stdio",
+    "lib-luau",
+    "lib-url",
+    "lib-semver",
+    "lib-archive",
+    "lib-sqlite",
+    "lib-mongo",
+    "lib-net",
+    "lib-random",
+    "lib-task",
+]
+lib-fs = ["dep:glob", "dep:getrandom"]
+lib-process = ["dep:sysinfo"]
+lib-serde = ["dep:serde_yaml_ng"]
+lib-cryptography = [
+    "dep:sha1",
+    "dep:sha2",
+    "dep:md-5",
+    "dep:hmac",
+    "dep:hex",
+    "dep:crc32fast",
+    "dep:aes-gcm",
+    "dep:argon2",
+    "dep:getrandom",
+    "dep:uuid",
+]
+lib-datetime = ["dep:chrono"]
+lib-regex = ["dep:regex"]
+lib-stdio = []
+lib-luau = []
+lib-url = ["dep:url", "dep:percent-encoding"]
+lib-semver = ["dep:semver"]
+lib-archive = ["dep:zip", "dep:tar"]
+lib-sqlite = ["dep:rusqlite", "lib-datetime"]
+lib-mongo = ["dep:mongodb", "dep:futures-util", "lib-datetime"]
+lib-random = ["dep:getrandom"]
+lib-task = []
+lib-net = [
+    "dep:reqwest",
+    "dep:tokio-tungstenite",
+    "dep:hickory-resolver",
+    "dep:interprocess",
+    "dep:suppaftp",
+    "dep:futures-util",
+    "dep:bytes",
+    "tokio/net",
+    "tokio/io-util",
+]
 
 [dependencies]
 mlua = { version = "0.12", features = ["luau-jit", "async", "error-send", "serialize"] }
@@ -17,35 +75,44 @@ async-channel = "2.5"
 clap = { version = "4.6", features = ["derive"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-serde_yaml_ng = "0.10"
+serde_yaml_ng = { version = "0.10", optional = true }
 toml = "1.1"
-chrono = "0.4"
-sha1 = "0.10"
-sha2 = "0.10"
-md-5 = "0.10"
-hmac = "0.12"
-hex = "0.4"
-crc32fast = "1.4"
-getrandom = "0.3"
-uuid = { version = "1", features = ["v4"] }
-aes-gcm = "0.10"
-argon2 = "0.5"
-regex = "1"
-url = "2"
-percent-encoding = "2"
-semver = "1"
-glob = "0.3"
-zip = { version = "2", default-features = false, features = ["deflate"] }
-tar = "0.4"
-rusqlite = { version = "0.32", features = ["bundled", "column_decltype"] }
-mongodb = "3"
-futures-util = "0.3"
+chrono = { version = "0.4", optional = true }
+sha1 = { version = "0.11", optional = true }
+sha2 = { version = "0.11", optional = true }
+md-5 = { version = "0.11", optional = true }
+hmac = { version = "0.13", optional = true }
+hex = { version = "0.4", optional = true }
+crc32fast = { version = "1.4", optional = true }
+getrandom = { version = "0.4", optional = true }
+uuid = { version = "1", features = ["v4"], optional = true }
+aes-gcm = { version = "0.11", optional = true }
+argon2 = { version = "0.5", optional = true }
+regex = { version = "1", optional = true }
+url = { version = "2", optional = true }
+percent-encoding = { version = "2", optional = true }
+semver = { version = "1", optional = true }
+glob = { version = "0.3", optional = true }
+zip = { version = "8", default-features = false, features = ["deflate"], optional = true }
+tar = { version = "0.4", optional = true }
+rusqlite = { version = "0.40", features = ["bundled", "column_decltype"], optional = true }
+mongodb = { version = "3", optional = true }
+futures-util = { version = "0.3", optional = true }
+reqwest = { version = "0.13", default-features = false, features = ["rustls", "webpki-roots", "gzip", "brotli", "json", "stream", "charset", "http2", "form", "query"], optional = true }
+tokio-tungstenite = { version = "0.29", default-features = false, features = ["connect", "handshake", "rustls-tls-webpki-roots"], optional = true }
+hickory-resolver = { version = "0.26", optional = true }
+interprocess = { version = "2", features = ["tokio"], optional = true }
+suppaftp = { version = "10", optional = true }
+bytes = { version = "1", optional = true }
 libloading = "0.9"
 flate2 = "1.1"
 base64 = "0.22"
 anyhow = "1.0"
 thiserror = "2.0"
-sysinfo = "0.39"
+sysinfo = { version = "0.39", optional = true }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_System_Console", "Win32_Foundation"] }
 
 [profile.release]
 opt-level = 3

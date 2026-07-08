@@ -37,6 +37,16 @@
 ./dist/hello.exe</code></pre></div>
       <p>Files that end in <code>.d.luau</code> hold type definitions only and are skipped when building. Modules that nothing reaches are skipped too, which keeps the output small.</p>
       <p>In a built program, <code>__dirname</code> is the folder that holds the executable. So paths written as <code>./file</code> read and write next to the exe.</p>
+      <h3>How the size is decided</h3>
+      <p>The built-in libraries are compiled Rust code inside the runtime, so they cannot be trimmed out of an already built runtime - an include header decides what your program can use, not what the file contains. To get an executable that truly only contains the libraries you include, <code>lehua build</code> can compile a matching runtime on the spot. It does this when it can find the Lehua source and a Rust toolchain; otherwise it embeds the full runtime and prints a note.</p>
+      <div class="codeblock"><pre><code class="language-bash"># tell lehua where its source lives (only needed once, if lehua was not built there)
+set LEHUA_SOURCE=C:\path\to\LehuaLang     # Windows
+export LEHUA_SOURCE=~/LehuaLang           # Linux and macOS
+
+lehua build
+# lehua: building a runtime with just [stdio] - the first build of a new combination takes a while
+# lehua: built dist/hello.exe (1 modules, 0 DLLs, libraries: stdio, ... KB)</code></pre></div>
+      <p>The first build of a new library combination compiles Rust and takes a few minutes; after that it is cached and rebuilds are quick. Heavy libraries like <code>sqlite</code> and <code>mongo</code> make the biggest difference, so leaving them out of programs that do not use them shrinks the output a lot.</p>
       <h3>Cross building</h3>
       <p>By default <code>build</code> uses the runtime you are running, so a Windows Lehua makes a <code>.exe</code>. To make a Linux binary from any machine, point <code>--runtime</code> at a Linux Lehua runtime.</p>
       <div class="codeblock"><pre><code class="language-bash">lehua build --runtime path/to/lehua-linux</code></pre></div>

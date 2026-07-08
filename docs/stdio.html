@@ -38,6 +38,22 @@
 <h2>Writing</h2>
 <p><code>stdio.write(...)</code> prints its arguments to standard output. <code>stdio.ewrite(...)</code> does the same on standard error, the stream terminals set aside for warnings and error messages. Both accept any mix of strings, numbers, and booleans, join them with nothing in between, and add no newline at the end. Anything else, like a table or <code>nil</code>, raises a Lua error.</p>
 <p>Compare with <code>print</code>, which puts a tab between values and a newline at the end. With <code>write</code> you place every character yourself, which is exactly what you want for progress output and colored text.</p>
+
+<h2>How print shows values</h2>
+<p>Lehua's <code>print</code> is made for looking at data. Tables are printed with their whole content: list items first, then named keys in alphabetical order, indented one level per depth. Nested tables print nested; tables that contain themselves and tables deeper than six levels print as <code>{...}</code> instead of running forever. Library objects like a DateTime, a Regex, or a MongoCluster print as their name in square brackets, in bold blue when the output is a real terminal: <span style="color:#3b82f6;font-weight:bold">[MongoCluster]</span>. When output is piped to a file the colors are left out automatically.</p>
+<div class="codeblock"><div class="window-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="window-title">src/main.luau</span></div><pre><code class="language-luau">--#include[datetime]
+
+print({ 3, 1, name = "ada", nested = { on = true } })
+-- {
+--     3,
+--     1,
+--     name = "ada",
+--     nested = {
+--         on = true,
+--     },
+-- }
+
+print(datetime.now())  -- [2026-07-08T19:04:05.123Z]</code></pre></div>
 <div class="codeblock"><div class="window-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="window-title">src/main.luau</span></div><pre><code class="language-luau">--#include[stdio]
 
 stdio.write("2 + 2 = ", 4, "\n")
@@ -116,7 +132,7 @@ end</code></pre></div>
 <table>
 <thead><tr><th>Name</th><th>Effect</th></tr></thead>
 <tbody>
-<tr><td><code>reset</code></td><td>Turns off all colors and styles at once — the usual way to end colored output.</td></tr>
+<tr><td><code>reset</code></td><td>Turns off all colors and styles at once - the usual way to end colored output.</td></tr>
 <tr><td><code>bold</code></td><td>Heavier text.</td></tr>
 <tr><td><code>dim</code></td><td>Fainter text.</td></tr>
 <tr><td><code>italic</code></td><td>Slanted text.</td></tr>

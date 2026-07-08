@@ -15,7 +15,28 @@ mod vpath;
 
 use std::process::ExitCode;
 
+#[cfg(windows)]
+fn enable_ansi() {
+    use windows_sys::Win32::System::Console::{
+        GetConsoleMode, GetStdHandle, SetConsoleMode, ENABLE_VIRTUAL_TERMINAL_PROCESSING,
+        STD_ERROR_HANDLE, STD_OUTPUT_HANDLE,
+    };
+    unsafe {
+        for which in [STD_OUTPUT_HANDLE, STD_ERROR_HANDLE] {
+            let handle = GetStdHandle(which);
+            let mut mode = 0u32;
+            if GetConsoleMode(handle, &mut mode) != 0 {
+                SetConsoleMode(handle, mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
+            }
+        }
+    }
+}
+
+#[cfg(not(windows))]
+fn enable_ansi() {}
+
 fn main() -> ExitCode {
+    enable_ansi();
     let args: Vec<String> = std::env::args_os()
         .skip(1)
         .map(|a| a.to_string_lossy().into_owned())

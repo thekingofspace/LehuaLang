@@ -132,7 +132,7 @@ pub fn build_bundle(
                     Err(e) => notes.push(format!("could not read DLL '{did}': {e}")),
                 },
                 Err(_) => notes.push(format!(
-                    "DLL '{did}' not found at build time — it was not embedded; \
+                    "DLL '{did}' not found at build time - it was not embedded; \
                      the exe will look for it next to itself at runtime"
                 )),
             }
@@ -162,7 +162,7 @@ pub fn build_bundle(
     for b in &required_builtins {
         if !includes.contains(b) {
             return Err(LehuaError::msg(format!(
-                "built-in library '{b}' is used but never included — add `--#include[{b}]` to a source file"
+                "built-in library '{b}' is used but never included - add `--#include[{b}]` to a source file"
             )));
         }
     }

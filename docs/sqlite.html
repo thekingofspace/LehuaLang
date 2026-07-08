@@ -39,11 +39,44 @@
 <table>
 <thead><tr><th>Function</th><th>Description</th></tr></thead>
 <tbody>
-<tr><td><code>sqlite.fromLocal(path)</code></td><td>Opens a database file, creating it (and any missing folders) if needed. The path follows the same rules as <code>fs</code>: <code>./name</code>, <code>../name</code>, <code>@self/name</code>, <code>@Alias/name</code>, or an absolute path.</td></tr>
-<tr><td><code>sqlite.fromConnection(text)</code></td><td>Opens from a raw connection string, passed to SQLite as it is. This accepts <code>":memory:"</code> and <code>file:</code> URIs like <code>"file:data.db?mode=ro"</code> for read only mode.</td></tr>
-<tr><td><code>sqlite.memory()</code></td><td>A fresh, empty database that lives in memory and disappears when it is closed.</td></tr>
+<tr><td><code>sqlite.fromLocal(path, options?)</code></td><td>Opens a database file, creating it (and any missing folders) if needed. The path follows the same rules as <code>fs</code>: <code>./name</code>, <code>../name</code>, <code>@self/name</code>, <code>@Alias/name</code>, or an absolute path.</td></tr>
+<tr><td><code>sqlite.fromConnection(info, options?)</code></td><td>Opens from a raw connection string (<code>":memory:"</code> or a <code>file:</code> URI like <code>"file:data.db?mode=ro"</code>), or from a connection info table - see below.</td></tr>
+<tr><td><code>sqlite.memory(options?)</code></td><td>A fresh, empty database that lives in memory and disappears when it is closed.</td></tr>
 </tbody>
 </table>
+
+<h2>Connection options</h2>
+<p>Every opener accepts an options table, and <code>fromConnection</code> can take one table that describes the whole connection. All fields are optional.</p>
+<table>
+<thead><tr><th>Field</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td><code>file</code></td><td><code>fromConnection</code> only: the database file, resolved like other paths. Leaving it out means an in-memory database.</td></tr>
+<tr><td><code>readOnly</code></td><td>Open without write access. Writes raise an error.</td></tr>
+<tr><td><code>create</code></td><td>Whether a missing file is created. Defaults to true; with false, opening a missing file raises an error.</td></tr>
+<tr><td><code>cache</code></td><td><code>fromConnection</code> only: <code>"shared"</code> or <code>"private"</code> page cache.</td></tr>
+<tr><td><code>immutable</code></td><td><code>fromConnection</code> only: promise SQLite the file cannot change (for media that is truly read only).</td></tr>
+<tr><td><code>password</code></td><td>The encryption key of an SQLCipher database. The standard Lehua runtime ships plain SQLite, which has no password support, so this raises a clear error unless the runtime was built with SQLCipher.</td></tr>
+<tr><td><code>busyTimeoutMs</code></td><td>How long to wait when another connection holds the lock before giving up.</td></tr>
+<tr><td><code>foreignKeys</code></td><td>Turn foreign key enforcement on or off.</td></tr>
+<tr><td><code>journalMode</code></td><td><code>"delete"</code>, <code>"truncate"</code>, <code>"persist"</code>, <code>"memory"</code>, <code>"wal"</code>, or <code>"off"</code>. <code>"wal"</code> is the usual choice for apps with several readers.</td></tr>
+<tr><td><code>cacheSizeKb</code></td><td>The page cache size in kilobytes.</td></tr>
+<tr><td><code>pragmas</code></td><td>A table of any other PRAGMA settings to apply, like <code>{ synchronous = "normal", user_version = 3 }</code>.</td></tr>
+</tbody>
+</table>
+<div class="codeblock"><div class="window-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="window-title">src/main.luau</span></div><pre><code class="language-luau">local db = sqlite.fromConnection({
+    file = "@self/app.db",
+    journalMode = "wal",
+    foreignKeys = true,
+    busyTimeoutMs = 5000,
+    pragmas = { synchronous = "normal" },
+})
+
+local snapshot = sqlite.fromLocal("@self/app.db", { readOnly = true })</code></pre></div>
+
+<h2>Inspecting a connection</h2>
+<p><code>db:info()</code> returns everything there is to know about an open connection: <code>path</code>, <code>readOnly</code>, <code>autocommit</code> (false while inside a transaction), <code>totalChanges</code>, <code>lastInsertId</code>, <code>sqliteVersion</code>, <code>journalMode</code>, <code>encoding</code>, <code>foreignKeys</code>, <code>busyTimeoutMs</code>, <code>pageSize</code>, <code>pageCount</code>, <code>cacheSize</code>, <code>userVersion</code>, and <code>schemaVersion</code>.</p>
+<div class="codeblock"><div class="window-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="window-title">src/main.luau</span></div><pre><code class="language-luau">print(db:info())
+-- prints the whole table, for example journalMode = "wal", pageSize = 4096, ...</code></pre></div>
 <div class="codeblock"><div class="window-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="window-title">src/main.luau</span></div><pre><code class="language-luau">--#include[sqlite]
 
 local db = sqlite.fromLocal("@self/app.db")
@@ -66,13 +99,14 @@ db:executeBatch([[
 <tr><td><code>db:lastInsertId()</code></td><td><code>number</code></td><td>The row id of the most recent insert.</td></tr>
 <tr><td><code>db:changes()</code></td><td><code>number</code></td><td>How many rows the last statement changed.</td></tr>
 <tr><td><code>db:tables()</code></td><td><code>{ string }</code></td><td>The names of the tables in the database.</td></tr>
+<tr><td><code>db:info()</code></td><td><code>table</code></td><td>Everything about the connection; see above.</td></tr>
 <tr><td><code>db:isOpen()</code></td><td><code>boolean</code></td><td>False after <code>close</code> has been called.</td></tr>
 <tr><td><code>db:close()</code></td><td><code>nil</code></td><td>Closes the database. Using it afterwards raises an error.</td></tr>
 </tbody>
 </table>
 
 <h2>Parameters</h2>
-<p>Never build SQL by gluing strings together — pass values separately and let the database handle them. Use <code>?</code> placeholders with an array, or named placeholders like <code>:name</code> with a table. Named placeholders may be written <code>:name</code>, <code>@name</code>, or <code>$name</code> in the SQL.</p>
+<p>Never build SQL by gluing strings together - pass values separately and let the database handle them. Use <code>?</code> placeholders with an array, or named placeholders like <code>:name</code> with a table. Named placeholders may be written <code>:name</code>, <code>@name</code>, or <code>$name</code> in the SQL.</p>
 <div class="codeblock"><div class="window-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="window-title">src/main.luau</span></div><pre><code class="language-luau">db:execute("INSERT INTO notes (body, created) VALUES (?, ?)", { "hello", datetime.now() })
 
 local rows = db:query("SELECT * FROM notes WHERE body LIKE :pat", { pat = "%hello%" })
@@ -92,7 +126,7 @@ end</code></pre></div>
 <tr><td>a DateTime object</td><td>TEXT in ISO 8601 form</td><td>a DateTime object again</td></tr>
 </tbody>
 </table>
-<p>The DateTime round trip works through the column type: declare a column as <code>DATETIME</code>, <code>DATE</code>, or <code>TIMESTAMP</code> and anything stored there — ISO text, or a number of seconds since the Unix epoch — comes back as a <a href="datetime.html">DateTime object</a>. Other columns are left alone.</p>
+<p>The DateTime round trip works through the column type: declare a column as <code>DATETIME</code>, <code>DATE</code>, or <code>TIMESTAMP</code> and anything stored there - ISO text, or a number of seconds since the Unix epoch - comes back as a <a href="datetime.html">DateTime object</a>. Other columns are left alone.</p>
 
 <h2>Transactions</h2>
 <p><code>db:transaction(callback)</code> runs the callback with all its changes grouped together. If the callback finishes, everything is committed at once. If it raises an error, everything is rolled back and the error is re-raised.</p>

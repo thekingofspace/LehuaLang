@@ -1,15 +1,34 @@
+#[cfg(feature = "lib-archive")]
 pub mod archive;
+#[cfg(feature = "lib-cryptography")]
 pub mod cryptography;
+#[cfg(feature = "lib-datetime")]
 pub mod datetime;
+#[cfg(feature = "lib-fs")]
 pub mod fs;
+#[cfg(feature = "lib-luau")]
 pub mod luau;
+#[cfg(feature = "lib-mongo")]
 pub mod mongo;
+#[cfg(feature = "lib-net")]
+pub mod net;
+#[cfg(feature = "lib-process")]
 pub mod process;
+#[cfg(feature = "lib-random")]
+pub mod random;
+#[cfg(feature = "lib-regex")]
 pub mod regex;
+#[cfg(feature = "lib-semver")]
 pub mod semver;
+#[cfg(feature = "lib-serde")]
 pub mod serde;
+#[cfg(feature = "lib-sqlite")]
 pub mod sqlite;
+#[cfg(feature = "lib-stdio")]
 pub mod stdio;
+#[cfg(feature = "lib-task")]
+pub mod task;
+#[cfg(feature = "lib-url")]
 pub mod url;
 
 use std::collections::BTreeMap;
@@ -23,6 +42,7 @@ use crate::engine::{Engine, VmScheduler};
 use crate::error::LehuaError;
 use crate::vpath;
 
+#[allow(dead_code)]
 pub struct LibCtx<'a> {
     pub lua: &'a Lua,
     pub engine: &'a Arc<Engine>,
@@ -31,46 +51,90 @@ pub struct LibCtx<'a> {
 }
 
 pub const KNOWN: &[&str] = &[
+    #[cfg(feature = "lib-fs")]
     "fs",
+    #[cfg(feature = "lib-process")]
     "process",
+    #[cfg(feature = "lib-serde")]
     "serde",
+    #[cfg(feature = "lib-cryptography")]
     "cryptography",
+    #[cfg(feature = "lib-datetime")]
     "datetime",
+    #[cfg(feature = "lib-regex")]
     "regex",
+    #[cfg(feature = "lib-stdio")]
     "stdio",
+    #[cfg(feature = "lib-luau")]
     "luau",
+    #[cfg(feature = "lib-url")]
     "url",
+    #[cfg(feature = "lib-semver")]
     "semver",
+    #[cfg(feature = "lib-archive")]
     "archive",
+    #[cfg(feature = "lib-sqlite")]
     "sqlite",
+    #[cfg(feature = "lib-mongo")]
     "mongo",
+    #[cfg(feature = "lib-net")]
+    "net",
+    #[cfg(feature = "lib-random")]
+    "random",
+    #[cfg(feature = "lib-task")]
+    "task",
 ];
 
 pub fn build(name: &str, ctx: &LibCtx) -> mlua::Result<Value> {
+    let _ = ctx;
     match name {
+        #[cfg(feature = "lib-fs")]
         "fs" => self::fs::build(ctx),
+        #[cfg(feature = "lib-process")]
         "process" => self::process::build(ctx),
+        #[cfg(feature = "lib-serde")]
         "serde" => self::serde::build(ctx),
+        #[cfg(feature = "lib-cryptography")]
         "cryptography" => self::cryptography::build(ctx),
+        #[cfg(feature = "lib-datetime")]
         "datetime" => self::datetime::build(ctx),
+        #[cfg(feature = "lib-regex")]
         "regex" => self::regex::build(ctx),
+        #[cfg(feature = "lib-stdio")]
         "stdio" => self::stdio::build(ctx),
+        #[cfg(feature = "lib-luau")]
         "luau" => self::luau::build(ctx),
+        #[cfg(feature = "lib-url")]
         "url" => self::url::build(ctx),
+        #[cfg(feature = "lib-semver")]
         "semver" => self::semver::build(ctx),
+        #[cfg(feature = "lib-archive")]
         "archive" => self::archive::build(ctx),
+        #[cfg(feature = "lib-sqlite")]
         "sqlite" => self::sqlite::build(ctx),
+        #[cfg(feature = "lib-mongo")]
         "mongo" => self::mongo::build(ctx),
-        other => Err(LehuaError::msg(format!("unknown built-in library '{other}'")).into()),
+        #[cfg(feature = "lib-net")]
+        "net" => self::net::build(ctx),
+        #[cfg(feature = "lib-random")]
+        "random" => self::random::build(ctx),
+        #[cfg(feature = "lib-task")]
+        "task" => self::task::build(ctx),
+        other => Err(LehuaError::msg(format!(
+            "built-in library '{other}' is not part of this runtime build"
+        ))
+        .into()),
     }
 }
 
+#[allow(dead_code)]
 pub struct PathScope {
     base: PathBuf,
     root: PathBuf,
     aliases: BTreeMap<String, String>,
 }
 
+#[allow(dead_code)]
 impl PathScope {
     pub fn new(ctx: &LibCtx) -> Rc<Self> {
         Rc::new(PathScope {

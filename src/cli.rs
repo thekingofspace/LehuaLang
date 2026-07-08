@@ -18,7 +18,7 @@ use crate::scaffold;
 #[command(
     name = "lehua",
     version,
-    about = "Lehua — the next-generation Luau runtime (compiled, multithreaded, batteries-included)"
+    about = "Lehua - the next-generation Luau runtime (compiled, multithreaded, batteries-included)"
 )]
 struct Cli {
     #[command(subcommand)]
@@ -114,6 +114,7 @@ fn cmd_build(out: Option<String>, runtime: Option<String>) -> Result<()> {
     }
 
     let payload = bundle::serialize_payload(&report.bundle)?;
+    let includes = report.bundle.manifest.includes.clone();
     let runtime_exe = match &runtime {
         Some(r) => {
             let p = absolutize(Path::new(r));
@@ -125,7 +126,10 @@ fn cmd_build(out: Option<String>, runtime: Option<String>) -> Result<()> {
             }
             p
         }
-        None => std::env::current_exe()?,
+        None => match slim_runtime(&includes) {
+            Some(p) => p,
+            None => std::env::current_exe()?,
+        },
     };
     let target_suffix = match &runtime {
         Some(_) => runtime_exe
@@ -145,13 +149,105 @@ fn cmd_build(out: Option<String>, runtime: Option<String>) -> Result<()> {
 
     let size = std::fs::metadata(&out_exe).map(|m| m.len()).unwrap_or(0);
     println!(
-        "lehua: built {} ({} modules, {} DLLs embedded, {} KB)",
+        "lehua: built {} ({} modules, {} DLLs, libraries: {}, {} KB)",
         out_exe.display(),
         report.module_count,
         report.dll_count,
+        if includes.is_empty() {
+            String::from("none")
+        } else {
+            includes.join(", ")
+        },
         size / 1024
     );
     Ok(())
+}
+
+fn which_cargo() -> Option<PathBuf> {
+    if let Some(home) = std::env::var_os("CARGO_HOME") {
+        let p = Path::new(&home)
+            .join("bin")
+            .join(format!("cargo{}", std::env::consts::EXE_SUFFIX));
+        if p.is_file() {
+            return Some(p);
+        }
+    }
+    let probe = std::process::Command::new("cargo")
+        .arg("--version")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status();
+    match probe {
+        Ok(s) if s.success() => Some(PathBuf::from("cargo")),
+        _ => None,
+    }
+}
+
+fn lehua_source_dir() -> Option<PathBuf> {
+    if let Some(p) = std::env::var_os("LEHUA_SOURCE") {
+        let p = absolutize(Path::new(&p));
+        if p.join("Cargo.toml").is_file() {
+            return Some(p);
+        }
+    }
+    let p = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    if p.join("Cargo.toml").is_file() {
+        return Some(p);
+    }
+    None
+}
+
+fn slim_runtime(includes: &[String]) -> Option<PathBuf> {
+    if includes.len() >= crate::libs::KNOWN.len() {
+        return None;
+    }
+    let source = lehua_source_dir()?;
+    if which_cargo().is_none() {
+        return None;
+    }
+    let mut features: Vec<String> = includes.iter().map(|i| format!("lib-{i}")).collect();
+    features.sort();
+    let features = features.join(",");
+    eprintln!(
+        "lehua: building a runtime with just [{}] - the first build of a new combination takes a while",
+        if includes.is_empty() {
+            String::from("no libraries")
+        } else {
+            includes.join(", ")
+        }
+    );
+    let mut cmd = std::process::Command::new("cargo");
+    cmd.arg("build")
+        .arg("--release")
+        .arg("--no-default-features")
+        .arg("--target-dir")
+        .arg(source.join("target").join("slim"))
+        .current_dir(&source);
+    if !features.is_empty() {
+        cmd.arg("--features").arg(&features);
+    }
+    match cmd.status() {
+        Ok(s) if s.success() => {}
+        _ => {
+            eprintln!(
+                "lehua: note: the slim runtime build did not finish, embedding the full runtime instead"
+            );
+            return None;
+        }
+    }
+    let exe = source
+        .join("target")
+        .join("slim")
+        .join("release")
+        .join(format!("lehua{}", std::env::consts::EXE_SUFFIX));
+    if exe.is_file() {
+        Some(exe)
+    } else {
+        eprintln!(
+            "lehua: note: the slim runtime build produced no binary, embedding the full runtime instead"
+        );
+        None
+    }
 }
 
 fn cmd_clean() -> Result<()> {
@@ -193,7 +289,7 @@ fn cmd_clean() -> Result<()> {
     }
     if !failed.is_empty() {
         return Err(LehuaError::msg(format!(
-            "could not remove {} — a file may be in use",
+            "could not remove {} - a file may be in use",
             failed.join(", ")
         )));
     }
@@ -234,7 +330,8 @@ fn execute_bundle(
         .enable_all()
         .build()?;
 
-    rt.block_on(async move {
+    let local = tokio::task::LocalSet::new();
+    rt.block_on(local.run_until(async move {
         let (lua, ctx) = engine::make_vm(engine.clone())?;
         let arg_values: Vec<PortableValue> = args
             .into_iter()
@@ -242,7 +339,7 @@ fn execute_bundle(
             .collect();
         engine::run_entry(lua, ctx, &engine.entry_id, None, arg_values).await?;
         Ok::<(), LehuaError>(())
-    })
+    }))
 }
 
 fn load_project(path: Option<String>) -> Result<(PathBuf, BuildManifest, LuauRc)> {

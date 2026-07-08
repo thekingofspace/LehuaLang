@@ -77,7 +77,7 @@ print(cryptography.decompress(fs.read("./big.log.gz")) == log) -- true</code></p
 </table>
 
 <h2>Encryption</h2>
-<p><code>encrypt</code> and <code>decrypt</code> use AES-256-GCM, an authenticated cipher: tampered data fails to decrypt instead of coming back scrambled. Any key string works — it is stretched to a full 256 bit key with SHA-256. The output is binary; base64 encode it if it needs to travel as text.</p>
+<p><code>encrypt</code> and <code>decrypt</code> use AES-256-GCM, an authenticated cipher: tampered data fails to decrypt instead of coming back scrambled. Any key string works - it is stretched to a full 256 bit key with SHA-256. The output is binary; base64 encode it if it needs to travel as text.</p>
 <table>
 <thead><tr><th>Function</th><th>Returns</th><th>Description</th></tr></thead>
 <tbody>
@@ -92,7 +92,7 @@ local ok, plain = pcall(cryptography.decrypt, "my password", sealed)
 print(ok, plain) -- true, attack at dawn</code></pre></div>
 
 <h2>Passwords</h2>
-<p>These two functions are for checking user passwords without ever storing the password itself. <code>passwordHash</code> uses Argon2id, an algorithm built to be slow on purpose so guessing millions of passwords is not practical. Each call picks a fresh random salt, so hashing the same password twice gives two different strings — that is correct, and it is why you check with <code>passwordVerify</code> instead of comparing strings.</p>
+<p>These two functions are for checking user passwords without ever storing the password itself. <code>passwordHash</code> uses Argon2id, an algorithm built to be slow on purpose so guessing millions of passwords is not practical. Each call picks a fresh random salt, so hashing the same password twice gives two different strings - that is correct, and it is why you check with <code>passwordVerify</code> instead of comparing strings.</p>
 <table>
 <thead><tr><th>Function</th><th>Returns</th><th>Description</th></tr></thead>
 <tbody>

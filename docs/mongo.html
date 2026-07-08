@@ -36,7 +36,7 @@
 <div class="codeblock"><pre><code class="language-luau">--#include[mongo]</code></pre></div>
 
 <h2>Connecting</h2>
-<p><code>mongo.connect(connectionString, options?)</code> returns a cluster object. Unlike <code>sqlite</code>, mongo always needs a connection string — there is no local file mode. The options table accepts <code>serverSelectionTimeoutMs</code>, <code>connectTimeoutMs</code>, and <code>appName</code>.</p>
+<p><code>mongo.connect(connectionString, options?)</code> returns a cluster object. Unlike <code>sqlite</code>, mongo always needs a connection string - there is no local file mode. The options table accepts <code>serverSelectionTimeoutMs</code>, <code>connectTimeoutMs</code>, and <code>appName</code>.</p>
 <div class="codeblock"><div class="window-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="window-title">src/main.luau</span></div><pre><code class="language-luau">--#include[mongo]
 
 local cluster = mongo.connect("mongodb+srv://user:pass@cluster0.example.mongodb.net/myapp")
@@ -146,7 +146,7 @@ users:updateOne({ _id = someId }, { ["$set"] = { active = true } })</code></pre>
 local id = users:insertOne({ name = "ada", joined = datetime.now() })
 local doc = users:findOne({ _id = id })
 print(doc.joined:format("%B %d, %Y"))</code></pre></div>
-<div class="note"><div class="note-title">Empty tables</div><p>Luau cannot tell an empty array from an empty document, so an empty table becomes an empty document. If a field must be an empty array, mark the table with <code>serde.array</code> from the <a href="serde.html">serde library</a> — mongo honors the same marker.</p></div>
+<div class="note"><div class="note-title">Empty tables</div><p>Luau cannot tell an empty array from an empty document, so an empty table becomes an empty document. If a field must be an empty array, mark the table with <code>serde.array</code> from the <a href="serde.html">serde library</a> - mongo honors the same marker.</p></div>
 </article>
   </main>
   <aside class="toc" id="toc" aria-label="On this page"></aside>

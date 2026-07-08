@@ -66,7 +66,7 @@ print(tostring(heading))  -- Regex(^#\s+.+$)</code></pre></div>
 <thead><tr><th>Function</th><th>Description</th></tr></thead>
 <tbody>
 <tr><td><code>regex.escape(text)</code></td><td>Returns the text with every regex special character escaped, so it can sit inside a pattern and match itself literally. <code>regex.escape("1+1")</code> is <code>"1\+1"</code>.</td></tr>
-<tr><td><code>regex.isMatch(pattern, text)</code></td><td>Compiles the pattern with no flags and reports whether it matches anywhere in the text. Handy for a single check, but it compiles the pattern every call — inside a loop, compile once with <code>regex.new</code> instead.</td></tr>
+<tr><td><code>regex.isMatch(pattern, text)</code></td><td>Compiles the pattern with no flags and reports whether it matches anywhere in the text. Handy for a single check, but it compiles the pattern every call - inside a loop, compile once with <code>regex.new</code> instead.</td></tr>
 </tbody>
 </table>
 
@@ -110,7 +110,7 @@ end</code></pre></div>
 <thead><tr><th>Key</th><th>Value</th></tr></thead>
 <tbody>
 <tr><td><code>.match</code></td><td>A match table for the whole match.</td></tr>
-<tr><td><code>[1]</code>, <code>[2]</code>, …</td><td>A match table for each group, in pattern order — or <code>false</code> when that group was not part of the match, for example the unused side of a <code>|</code>.</td></tr>
+<tr><td><code>[1]</code>, <code>[2]</code>, …</td><td>A match table for each group, in pattern order - or <code>false</code> when that group was not part of the match, for example the unused side of a <code>|</code>.</td></tr>
 <tr><td><code>["name"]</code></td><td>Groups named with <code>(?&lt;name&gt;...)</code> also appear under their name. A named group that did not match is simply absent.</td></tr>
 </tbody>
 </table>
@@ -158,7 +158,7 @@ print(pair:replace("one two three four", "${b} ${a}"))
 -- two one three four  (replace only touches the first match)</code></pre></div>
 
 <h2>Splitting</h2>
-<p><code>re:split(text, limit?)</code> cuts the text at every match and returns the pieces between them as an array; the matches themselves are dropped. With a limit of <code>n</code> the result has at most <code>n</code> pieces, and the last one keeps the rest of the text unsplit. A match at the very start of the text, or two matches back to back, produce empty strings — that is how you can tell a field was empty.</p>
+<p><code>re:split(text, limit?)</code> cuts the text at every match and returns the pieces between them as an array; the matches themselves are dropped. With a limit of <code>n</code> the result has at most <code>n</code> pieces, and the last one keeps the rest of the text unsplit. A match at the very start of the text, or two matches back to back, produce empty strings - that is how you can tell a field was empty.</p>
 <div class="codeblock"><div class="window-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="window-title">src/main.luau</span></div><pre><code class="language-luau">--#include[regex]
 
 local comma = regex.new([[\s*,\s*]])
@@ -172,7 +172,7 @@ print(parts[1], parts[2])  -- a   b, c</code></pre></div>
 <h2>Bytes and positions</h2>
 <p>Luau strings are strings of bytes, and the regex library matches on those bytes directly. <code>start</code> and <code>finish</code> count bytes, so a character that takes several bytes in UTF-8, like <code>é</code>, advances the count by more than one. Classes such as <code>\w</code> and <code>.</code> still understand UTF-8 text, so they match whole characters rather than splitting one down the middle.</p>
 
-<div class="note"><div class="note-title">Errors</div><p><code>regex.new</code> and <code>regex.isMatch</code> raise a Lua error for a pattern that does not compile, or for a flag outside <code>i m s x U</code>. Wrap them in <code>pcall</code> when the pattern comes from outside your program. Methods on a compiled Regex do not raise — a search that finds nothing returns <code>nil</code> or an empty array.</p></div>
+<div class="note"><div class="note-title">Errors</div><p><code>regex.new</code> and <code>regex.isMatch</code> raise a Lua error for a pattern that does not compile, or for a flag outside <code>i m s x U</code>. Wrap them in <code>pcall</code> when the pattern comes from outside your program. Methods on a compiled Regex do not raise - a search that finds nothing returns <code>nil</code> or an empty array.</p></div>
 </article>
   </main>
   <aside class="toc" id="toc" aria-label="On this page"></aside>

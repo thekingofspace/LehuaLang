@@ -106,7 +106,7 @@ pub fn build(ctx: &LibCtx) -> mlua::Result<Value> {
             getrandom::fill(&mut nonce)
                 .map_err(|e| LehuaError::msg(format!("random source failed: {e}")))?;
             let sealed = cipher
-                .encrypt(Nonce::from_slice(&nonce), &plaintext.as_bytes()[..])
+                .encrypt(&Nonce::try_from(&nonce[..]).unwrap(), &plaintext.as_bytes()[..])
                 .map_err(|_| LehuaError::msg("encryption failed"))?;
             let mut out = Vec::with_capacity(NONCE_LEN + sealed.len());
             out.extend_from_slice(&nonce);
@@ -123,8 +123,10 @@ pub fn build(ctx: &LibCtx) -> mlua::Result<Value> {
                 return Err(LehuaError::msg("decrypt: data is too short").into());
             }
             let cipher = make_cipher(&key.as_bytes());
+            let nonce = Nonce::try_from(&data[..NONCE_LEN])
+                .map_err(|_| LehuaError::msg("decrypt: data is too short"))?;
             let plain = cipher
-                .decrypt(Nonce::from_slice(&data[..NONCE_LEN]), &data[NONCE_LEN..])
+                .decrypt(&nonce, &data[NONCE_LEN..])
                 .map_err(|_| {
                     LehuaError::msg("decrypt failed: wrong key or corrupted data")
                 })?;
@@ -136,7 +138,11 @@ pub fn build(ctx: &LibCtx) -> mlua::Result<Value> {
         "passwordHash",
         lua.create_function(|_, password: mlua::LuaString| {
             use argon2::password_hash::{PasswordHasher, SaltString};
-            let salt = SaltString::generate(&mut argon2::password_hash::rand_core::OsRng);
+            let mut salt_bytes = [0u8; 16];
+            getrandom::fill(&mut salt_bytes)
+                .map_err(|e| LehuaError::msg(format!("passwordHash failed: {e}")))?;
+            let salt = SaltString::encode_b64(&salt_bytes)
+                .map_err(|e| LehuaError::msg(format!("passwordHash failed: {e}")))?;
             let hash = argon2::Argon2::default()
                 .hash_password(&password.as_bytes(), &salt)
                 .map_err(|e| LehuaError::msg(format!("passwordHash failed: {e}")))?;
@@ -198,7 +204,7 @@ fn hash_bytes(algo: &str, data: &[u8]) -> mlua::Result<Vec<u8>> {
 fn hmac_bytes(algo: &str, key: &[u8], data: &[u8]) -> mlua::Result<Vec<u8>> {
     macro_rules! mac {
         ($h:ty) => {{
-            let mut m = <Hmac<$h> as Mac>::new_from_slice(key)
+            let mut m = <Hmac<$h> as hmac::KeyInit>::new_from_slice(key)
                 .map_err(|_| LehuaError::msg("hmac: invalid key"))?;
             m.update(data);
             m.finalize().into_bytes().to_vec()

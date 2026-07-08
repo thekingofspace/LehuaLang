@@ -177,8 +177,7 @@ export type RegexMatch = {
 
 export type RegexCaptures = {
     match: RegexMatch,
-    [number]: RegexMatch | boolean,
-    [string]: RegexMatch,
+    [any]: RegexMatch | boolean,
 }
 
 export type Regex = {
@@ -297,6 +296,51 @@ export type SqliteParams = { any } | { [string]: any }
 
 export type SqliteRow = { [string]: any }
 
+export type SqliteJournalMode = "delete" | "truncate" | "persist" | "memory" | "wal" | "off"
+
+export type SqliteOpenOptions = {
+    readOnly: boolean?,
+    create: boolean?,
+    password: string?,
+    busyTimeoutMs: number?,
+    foreignKeys: boolean?,
+    journalMode: SqliteJournalMode?,
+    cacheSizeKb: number?,
+    pragmas: { [string]: string | number | boolean }?,
+}
+
+export type SqliteConnectionInfo = {
+    file: string?,
+    readOnly: boolean?,
+    create: boolean?,
+    cache: ("shared" | "private")?,
+    immutable: boolean?,
+    password: string?,
+    busyTimeoutMs: number?,
+    foreignKeys: boolean?,
+    journalMode: SqliteJournalMode?,
+    cacheSizeKb: number?,
+    pragmas: { [string]: string | number | boolean }?,
+}
+
+export type SqliteInfo = {
+    path: string,
+    readOnly: boolean,
+    autocommit: boolean,
+    totalChanges: number,
+    lastInsertId: number,
+    sqliteVersion: string,
+    journalMode: string,
+    encoding: string,
+    foreignKeys: boolean,
+    busyTimeoutMs: number,
+    pageSize: number,
+    pageCount: number,
+    cacheSize: number,
+    userVersion: number,
+    schemaVersion: number,
+}
+
 export type SqliteDatabase = {
     execute: (self: SqliteDatabase, sql: string, params: SqliteParams?) -> number,
     executeBatch: (self: SqliteDatabase, sql: string) -> (),
@@ -306,14 +350,15 @@ export type SqliteDatabase = {
     lastInsertId: (self: SqliteDatabase) -> number,
     changes: (self: SqliteDatabase) -> number,
     tables: (self: SqliteDatabase) -> { string },
+    info: (self: SqliteDatabase) -> SqliteInfo,
     isOpen: (self: SqliteDatabase) -> boolean,
     close: (self: SqliteDatabase) -> (),
 }
 
 export type Sqlite = {
-    fromLocal: (path: string) -> SqliteDatabase,
-    fromConnection: (connection: string) -> SqliteDatabase,
-    memory: () -> SqliteDatabase,
+    fromLocal: (path: string, options: SqliteOpenOptions?) -> SqliteDatabase,
+    fromConnection: (connection: string | SqliteConnectionInfo, options: SqliteOpenOptions?) -> SqliteDatabase,
+    memory: (options: SqliteOpenOptions?) -> SqliteDatabase,
 }
 
 export type MongoObjectId = {
@@ -407,6 +452,255 @@ export type Mongo = {
     noneOf: (filters: { MongoDocument }) -> MongoDocument,
 }
 
+export type Sink = {
+    write: (self: Sink, data: string | buffer) -> (),
+    bytes: (self: Sink) -> string,
+    buffer: (self: Sink) -> buffer,
+    len: (self: Sink) -> number,
+    clear: (self: Sink) -> (),
+    save: (self: Sink, path: string) -> string,
+    isFile: (self: Sink) -> boolean,
+    path: (self: Sink) -> string?,
+}
+
+export type TcpConnection = {
+    on: ((self: TcpConnection, event: "data", callback: (data: string) -> ()) -> ())
+        & ((self: TcpConnection, event: "line", callback: (line: string) -> ()) -> ())
+        & ((self: TcpConnection, event: "close", callback: (err: string?) -> ()) -> ()),
+    read: (self: TcpConnection, count: number?) -> string?,
+    readLine: (self: TcpConnection) -> string?,
+    readUntil: (self: TcpConnection, delimiter: string) -> string?,
+    readAll: (self: TcpConnection) -> string,
+    write: (self: TcpConnection, data: string | buffer) -> (),
+    peerAddress: (self: TcpConnection) -> string,
+    localAddress: (self: TcpConnection) -> string,
+    close: (self: TcpConnection) -> (),
+}
+
+export type TcpServer = {
+    on: (self: TcpServer, event: "connection", callback: (connection: TcpConnection) -> ()) -> (),
+    accept: (self: TcpServer) -> TcpConnection?,
+    address: (self: TcpServer) -> string,
+    close: (self: TcpServer) -> (),
+}
+
+export type UdpSocket = {
+    on: (self: UdpSocket, event: "message", callback: (data: string, ip: string, port: number) -> ()) -> (),
+    sendTo: (self: UdpSocket, data: string | buffer, host: string, port: number) -> number,
+    recvFrom: (self: UdpSocket) -> (string, string, number),
+    connect: (self: UdpSocket, host: string, port: number) -> (),
+    send: (self: UdpSocket, data: string | buffer) -> number,
+    recv: (self: UdpSocket) -> string,
+    broadcast: (self: UdpSocket, on: boolean?) -> (),
+    localAddress: (self: UdpSocket) -> string,
+    close: (self: UdpSocket) -> (),
+}
+
+export type IpcConnection = {
+    on: ((self: IpcConnection, event: "data", callback: (data: string) -> ()) -> ())
+        & ((self: IpcConnection, event: "line", callback: (line: string) -> ()) -> ())
+        & ((self: IpcConnection, event: "close", callback: (err: string?) -> ()) -> ()),
+    read: (self: IpcConnection, count: number?) -> string?,
+    readLine: (self: IpcConnection) -> string?,
+    write: (self: IpcConnection, data: string | buffer) -> (),
+    close: (self: IpcConnection) -> (),
+}
+
+export type IpcServer = {
+    on: (self: IpcServer, event: "connection", callback: (connection: IpcConnection) -> ()) -> (),
+    accept: (self: IpcServer) -> IpcConnection?,
+    name: (self: IpcServer) -> string,
+    close: (self: IpcServer) -> (),
+}
+
+export type HttpHeaders = { [string]: string }
+
+export type HttpResponse = {
+    ok: boolean,
+    status: number,
+    statusText: string,
+    headers: HttpHeaders,
+    body: string,
+    url: string,
+}
+
+export type HttpRequestOptions = {
+    method: string?,
+    url: string?,
+    headers: HttpHeaders?,
+    query: { [string]: string }?,
+    form: { [string]: string }?,
+    body: (string | buffer)?,
+    json: any?,
+    timeout: number?,
+    auth: { username: string?, password: string?, bearer: string? }?,
+    redirects: (number | boolean)?,
+    insecure: boolean?,
+}
+
+export type HttpServerResponse = {
+    status: number?,
+    headers: HttpHeaders?,
+    body: (string | buffer)?,
+    json: any?,
+}
+
+export type HttpIncoming = {
+    method: (self: HttpIncoming) -> string,
+    path: (self: HttpIncoming) -> string,
+    target: (self: HttpIncoming) -> string,
+    query: (self: HttpIncoming) -> string,
+    peerAddress: (self: HttpIncoming) -> string,
+    body: (self: HttpIncoming) -> string,
+    headers: (self: HttpIncoming) -> HttpHeaders,
+    header: (self: HttpIncoming, name: string) -> string?,
+    respond: (self: HttpIncoming, response: string | HttpServerResponse) -> (),
+}
+
+export type HttpServer = {
+    on: (self: HttpServer, event: "request", callback: (request: HttpIncoming) -> (string | HttpServerResponse)?) -> (),
+    accept: (self: HttpServer) -> HttpIncoming?,
+    address: (self: HttpServer) -> string,
+    close: (self: HttpServer) -> (),
+}
+
+export type Http = {
+    request: (url: string | HttpRequestOptions, options: HttpRequestOptions?) -> HttpResponse,
+    get: (url: string, options: HttpRequestOptions?) -> HttpResponse,
+    post: (url: string, options: HttpRequestOptions?) -> HttpResponse,
+    put: (url: string, options: HttpRequestOptions?) -> HttpResponse,
+    patch: (url: string, options: HttpRequestOptions?) -> HttpResponse,
+    delete: (url: string, options: HttpRequestOptions?) -> HttpResponse,
+    head: (url: string, options: HttpRequestOptions?) -> HttpResponse,
+    options: (url: string, options: HttpRequestOptions?) -> HttpResponse,
+    serve: (options: number | { host: string?, port: number }) -> HttpServer,
+}
+
+export type WebSocketMessage = {
+    type: "text" | "binary" | "ping" | "pong" | "close" | "frame",
+    data: string?,
+    code: number?,
+    reason: string?,
+}
+
+export type WebSocket = {
+    on: ((self: WebSocket, event: "message", callback: (message: WebSocketMessage) -> ()) -> ())
+        & ((self: WebSocket, event: "close", callback: (code: number?, reason: string?) -> ()) -> ()),
+    send: (self: WebSocket, text: string) -> (),
+    sendBinary: (self: WebSocket, data: string | buffer) -> (),
+    ping: (self: WebSocket, data: string?) -> (),
+    receive: (self: WebSocket) -> WebSocketMessage?,
+    close: (self: WebSocket, code: number?, reason: string?) -> (),
+    peerAddress: (self: WebSocket) -> string,
+}
+
+export type WebSocketServer = {
+    on: (self: WebSocketServer, event: "connection", callback: (socket: WebSocket) -> ()) -> (),
+    accept: (self: WebSocketServer) -> WebSocket?,
+    address: (self: WebSocketServer) -> string,
+    close: (self: WebSocketServer) -> (),
+}
+
+export type DnsMxRecord = { priority: number, host: string }
+export type DnsSrvRecord = { priority: number, weight: number, port: number, target: string }
+
+export type Dns = {
+    lookup: (host: string) -> { string },
+    lookupOne: (host: string) -> string?,
+    reverse: (ip: string) -> { string },
+    resolve: (name: string, recordType: string) -> { any },
+}
+
+export type FtpConnectOptions = {
+    host: string,
+    port: number?,
+    user: string?,
+    password: string?,
+}
+
+export type FtpSession = {
+    pwd: (self: FtpSession) -> string,
+    cwd: (self: FtpSession, path: string) -> (),
+    cdup: (self: FtpSession) -> (),
+    mkdir: (self: FtpSession, path: string) -> (),
+    removeDir: (self: FtpSession, path: string) -> (),
+    remove: (self: FtpSession, path: string) -> (),
+    rename: (self: FtpSession, from: string, to: string) -> (),
+    size: (self: FtpSession, path: string) -> number,
+    list: (self: FtpSession, path: string?) -> { string },
+    nameList: (self: FtpSession, path: string?) -> { string },
+    binary: (self: FtpSession) -> (),
+    ascii: (self: FtpSession) -> (),
+    download: (self: FtpSession, remote: string, into: Sink?) -> string | number,
+    downloadTo: (self: FtpSession, remote: string, localPath: string) -> string,
+    upload: (self: FtpSession, remote: string, source: string | buffer | Sink) -> number,
+    uploadFile: (self: FtpSession, remote: string, localPath: string) -> number,
+    noop: (self: FtpSession) -> (),
+    close: (self: FtpSession) -> (),
+}
+
+export type Ftp = {
+    connect: (options: FtpConnectOptions) -> FtpSession,
+}
+
+export type WebSocketLib = {
+    connect: (url: string) -> WebSocket,
+    listen: (host: string?, port: number) -> WebSocketServer,
+}
+
+export type Net = {
+    http: Http,
+    ws: WebSocketLib,
+    dns: Dns,
+    ftp: Ftp,
+    tcp: {
+        connect: (host: string, port: number) -> TcpConnection,
+        listen: (host: string?, port: number) -> TcpServer,
+    },
+    udp: {
+        bind: (host: string?, port: number?) -> UdpSocket,
+    },
+    ipc: {
+        connect: (name: string) -> IpcConnection,
+        listen: (name: string) -> IpcServer,
+    },
+    sink: (options: { file: string }?) -> Sink,
+}
+
+export type Random = {
+    NextInteger: (self: Random, min: number, max: number) -> number,
+    NextNumber: ((self: Random) -> number) & ((self: Random, min: number, max: number) -> number),
+    NextBoolean: (self: Random, chance: number?) -> boolean,
+    NextBytes: (self: Random, count: number) -> string,
+    Shuffle: <T>(self: Random, list: { T }) -> { T },
+    Choice: <T>(self: Random, list: { T }) -> T?,
+    Clone: (self: Random) -> Random,
+}
+
+export type RandomLib = {
+    new: (seed: number?) -> Random,
+}
+
+export type Task = {
+    Cancel: (self: Task) -> (),
+    Reschedule: (self: Task, seconds: number) -> (),
+    IsCancelled: (self: Task) -> boolean,
+    IsFinished: (self: Task) -> boolean,
+    Kind: (self: Task) -> string,
+}
+
+export type TaskCallback = ((...any) -> ()) | thread
+
+export type TaskLib = {
+    wait: (seconds: number?) -> number,
+    spawn: (callback: TaskCallback, ...any) -> Task,
+    defer: (callback: TaskCallback, ...any) -> Task,
+    delay: (seconds: number, callback: TaskCallback, ...any) -> Task,
+    schedule: (callback: TaskCallback, seconds: number, ...any) -> Task,
+    reschedule: (task: Task, seconds: number) -> (),
+    cancel: (target: Task | thread) -> (),
+}
+
 declare function parallel(path: string, ...: any): Port
 
 declare __dirname: string
@@ -425,3 +719,6 @@ declare semver: Semver
 declare archive: Archive
 declare sqlite: Sqlite
 declare mongo: Mongo
+declare net: Net
+declare random: RandomLib
+declare task: TaskLib

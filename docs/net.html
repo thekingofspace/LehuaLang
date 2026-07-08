@@ -1,0 +1,384 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The net library · Lehua</title>
+<meta name="description" content="The net library. Lehua is a standalone Luau runtime that compiles to a single executable.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='6' fill='%23d94a3d'/%3E%3Cg fill='%23e5675b'%3E%3Cellipse cx='16' cy='6' rx='3.4' ry='5'/%3E%3Cellipse cx='16' cy='26' rx='3.4' ry='5'/%3E%3Cellipse cx='6' cy='16' rx='5' ry='3.4'/%3E%3Cellipse cx='26' cy='16' rx='5' ry='3.4'/%3E%3C/g%3E%3Ccircle cx='16' cy='16' r='3' fill='%23ffd24d'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="assets/styles.css">
+<script>(function(){try{var t=localStorage.getItem('lehua-theme');if(!t)t=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light';document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="navbar">
+  <button id="menu-btn" class="icon-btn" aria-label="Open menu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16" stroke-linecap="round"/></svg></button>
+  <a class="brand" href="index.html"><svg viewBox="0 0 32 32"><circle cx="16" cy="16" r="6" fill="#d94a3d"/><g fill="#e5675b"><ellipse cx="16" cy="6" rx="3.4" ry="5"/><ellipse cx="16" cy="26" rx="3.4" ry="5"/><ellipse cx="6" cy="16" rx="5" ry="3.4"/><ellipse cx="26" cy="16" rx="5" ry="3.4"/></g><circle cx="16" cy="16" r="3" fill="#ffd24d"/></svg> Lehua</a>
+  <div class="nav-spacer"></div>
+  <nav class="nav-links">
+    <a class="docs" href="introduction.html">Docs</a>
+    <a class="gh" href="https://github.com/thekingofspace/LehuaLang"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.58 2 12.25c0 4.53 2.87 8.37 6.84 9.73.5.1.68-.22.68-.49v-1.7c-2.78.62-3.37-1.22-3.37-1.22-.45-1.18-1.11-1.5-1.11-1.5-.91-.64.07-.62.07-.62 1 .07 1.53 1.06 1.53 1.06.9 1.58 2.36 1.12 2.94.86.09-.67.35-1.12.63-1.38-2.22-.26-4.56-1.14-4.56-5.07 0-1.12.39-2.03 1.03-2.75-.1-.26-.45-1.3.1-2.71 0 0 .84-.28 2.75 1.05a9.3 9.3 0 015 0c1.91-1.33 2.75-1.05 2.75-1.05.55 1.41.2 2.45.1 2.71.64.72 1.03 1.63 1.03 2.75 0 3.94-2.34 4.81-4.57 5.06.36.32.68.94.68 1.9v2.82c0 .27.18.6.69.49A10.02 10.02 0 0022 12.25C22 6.58 17.52 2 12 2z"/></svg> GitHub</a>
+  </nav>
+  <button id="theme-btn" class="icon-btn" aria-label="Toggle theme"><svg id="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z" stroke-linejoin="round"/></svg><svg id="icon-sun" style="display:none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.4 1.4M17.6 17.6L19 19M19 5l-1.4 1.4M6.4 17.6L5 19" stroke-linecap="round"/></svg></button>
+</header>
+<div class="backdrop" id="backdrop"></div>
+<div class="layout">
+  <aside class="sidebar" id="sidebar">
+    <label class="side-search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3" stroke-linecap="round"/></svg><input id="side-search" type="text" placeholder="Search docs" aria-label="Search the docs"><kbd>Ctrl K</kbd></label>
+    <nav id="side-nav" class="side-nav"></nav>
+  </aside>
+  <main class="content">
+    <article class="doc-page">
+<p class="eyebrow">Library Reference</p>
+<h1>The net library</h1>
+<p class="lead">The <code>net</code> library is Lehua's networking toolbox. It covers HTTP requests and serving, raw TCP and UDP, local IPC channels, DNS lookups, WebSocket clients and hosts, and FTP with a sink type for streaming files. Everything is async and cooperative, so a program can talk to many things at once on a single thread.</p>
+
+<h2>Including net</h2>
+<div class="codeblock"><pre><code class="language-luau">--#include[net]</code></pre></div>
+
+<h2>Events and receivers</h2>
+<p>Every socket, connection, and server in <code>net</code> can push its work to you through events. You bind a receiver with <code>on(event, callback)</code> and the runtime calls it every time something arrives: a new connection on a server, a chunk of data on a TCP connection, a datagram on a UDP socket, a request on an HTTP server. This is the recommended way to host things, because nothing sits in a loop calling a receive function over and over.</p>
+<p>Three rules make receivers predictable:</p>
+<table>
+<thead><tr><th>Rule</th><th>What it means</th></tr></thead>
+<tbody>
+<tr><td>Every callback runs in its own coroutine</td><td>Each event spawns a fresh coroutine for the callback, so a slow handler never blocks the next event. Ten clients can be inside your connection handler at once. Handlers can freely call async things like <code>net.http.get</code> or socket reads and writes.</td></tr>
+<tr><td>One receiver per event</td><td>Binding the same event twice on one object raises an error. On a stream connection, <code>"data"</code> and <code>"line"</code> count as the same slot because both consume the incoming bytes.</td></tr>
+<tr><td>Receivers keep the program alive</td><td>When your main script reaches its end, Lehua keeps running as long as any receiver is still bound. Call <code>close()</code> on the server or connection to release it and let the program exit.</td></tr>
+</tbody>
+</table>
+<div class="codeblock"><div class="window-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="window-title">src/main.luau</span></div><pre><code class="language-luau">--#include[net]
+
+local server = net.tcp.listen("127.0.0.1", 4000)
+print("listening on " .. server:address())
+
+server:on("connection", function(client)
+    client:on("line", function(line)
+        client:write("you said: " .. line .. "\n")
+    end)
+    client:on("close", function()
+        print("client left")
+    end)
+end)</code></pre></div>
+<p>If a handler raises an error, the error is printed to stderr and the rest of the program keeps running. An HTTP handler that errors also answers its client with a 500 so nobody is left hanging.</p>
+
+<h3>Polling instead</h3>
+<p>The pull style still works everywhere: call <code>accept()</code> on a server or <code>read()</code>, <code>readLine()</code>, <code>recv()</code>, <code>receive()</code> on a socket to wait for the next thing yourself. It is fine for simple scripts and clients, but do not mix polling and a receiver on the same object; they would compete for the same incoming bytes.</p>
+
+<h2>Hosts and ports</h2>
+<p>Every function that binds or connects takes a <code>host</code> and a <code>port</code>, so here is what they mean once, for all of them.</p>
+<table>
+<thead><tr><th>Value</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td><code>host</code> when listening</td><td>Which of the machine's addresses to accept traffic on. <code>"0.0.0.0"</code> (the default) means every interface, reachable from other machines. <code>"127.0.0.1"</code> means only programs on the same machine can connect. You can also bind a specific interface's IP.</td></tr>
+<tr><td><code>host</code> when connecting</td><td>Where to connect to: an IP address like <code>"93.184.216.34"</code> or a name like <code>"example.com"</code>, which is resolved through DNS for you.</td></tr>
+<tr><td><code>port</code></td><td>A number from 1 to 65535. Ports below 1024 usually need administrator rights to listen on.</td></tr>
+<tr><td><code>port</code> of <code>0</code></td><td>When listening, asks the OS to pick a free port. Read the real one back with <code>address()</code> or <code>localAddress()</code>, which return <code>"ip:port"</code> strings.</td></tr>
+</tbody>
+</table>
+
+<h2>HTTP requests</h2>
+<p><code>net.http.request</code> makes a request and waits for the whole response. Pass a URL and an options table, or a single options table with a <code>url</code> field. The helpers <code>net.http.get</code>, <code>post</code>, <code>put</code>, <code>patch</code>, <code>delete</code>, <code>head</code>, and <code>options</code> set the method for you.</p>
+<table>
+<thead><tr><th>Option</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td><code>method</code></td><td>The HTTP method. Defaults to <code>"GET"</code>.</td></tr>
+<tr><td><code>headers</code></td><td>A table of request headers.</td></tr>
+<tr><td><code>query</code></td><td>A table of values added to the URL as a query string.</td></tr>
+<tr><td><code>body</code></td><td>A string or buffer sent as the body.</td></tr>
+<tr><td><code>json</code></td><td>A value encoded as JSON. Sets the content type for you.</td></tr>
+<tr><td><code>form</code></td><td>A table sent as a URL encoded form.</td></tr>
+<tr><td><code>timeout</code></td><td>Seconds to wait before giving up.</td></tr>
+<tr><td><code>auth</code></td><td><code>{ username = ..., password = ... }</code> for basic auth, or <code>{ bearer = "token" }</code>.</td></tr>
+<tr><td><code>redirects</code></td><td>A number to cap redirects, or <code>false</code> to follow none.</td></tr>
+<tr><td><code>insecure</code></td><td><code>true</code> to accept invalid TLS certificates. Use with care.</td></tr>
+</tbody>
+</table>
+<p>The response is a table with <code>ok</code> (true for a 2xx status), <code>status</code>, <code>statusText</code>, <code>headers</code> (keyed by lower case name), <code>body</code>, and the final <code>url</code> after any redirects.</p>
+<div class="codeblock"><div class="window-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="window-title">src/main.luau</span></div><pre><code class="language-luau">--#include[net, serde]
+
+local res = net.http.get("https://api.example.com/status")
+if res.ok then
+    local data = serde.decode("json", res.body)
+    print(data.uptime)
+end
+
+net.http.post("https://api.example.com/items", {
+    json = { name = "widget", count = 3 },
+    auth = { bearer = os.getenv("API_TOKEN") },
+    timeout = 10,
+})</code></pre></div>
+
+<h2>HTTP serving</h2>
+<p><code>net.http.serve(port)</code> or <code>net.http.serve({ host = ..., port = ... })</code> starts an HTTP server and returns an <code>HttpServer</code>. The host defaults to <code>"0.0.0.0"</code>. Connections are accepted and parsed in the background, so many clients can be in flight at once.</p>
+<table>
+<thead><tr><th>HttpServer</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>server:on("request", fn)</code></td><td>Binds the request receiver. The callback gets an <code>HttpIncoming</code> and runs in its own coroutine per request.</td></tr>
+<tr><td><code>server:accept()</code></td><td>Polling alternative: waits for the next request and returns it, or <code>nil</code> once the server is closed.</td></tr>
+<tr><td><code>server:address()</code></td><td>The bound <code>"ip:port"</code> string.</td></tr>
+<tr><td><code>server:close()</code></td><td>Stops accepting, ends the receiver, and releases the port.</td></tr>
+</tbody>
+</table>
+<p>The request callback can answer in two ways. Return a string or a response table and the server sends it for you. Or call <code>request:respond(...)</code> yourself somewhere in the handler and return nothing. If the handler returns nothing and never responded, the client gets a 500 instead of waiting forever; the same happens if the handler errors.</p>
+<table>
+<thead><tr><th>HttpIncoming</th><th>Returns</th></tr></thead>
+<tbody>
+<tr><td><code>request:method()</code></td><td>The HTTP method, like <code>"GET"</code>.</td></tr>
+<tr><td><code>request:path()</code></td><td>The path without the query string.</td></tr>
+<tr><td><code>request:target()</code></td><td>The full request target, path plus query string.</td></tr>
+<tr><td><code>request:query()</code></td><td>The raw query string, or <code>""</code>.</td></tr>
+<tr><td><code>request:headers()</code></td><td>A table of headers, keyed by lower case name.</td></tr>
+<tr><td><code>request:header(name)</code></td><td>One header value, or <code>nil</code>.</td></tr>
+<tr><td><code>request:body()</code></td><td>The request body as a string.</td></tr>
+<tr><td><code>request:peerAddress()</code></td><td>The client's address.</td></tr>
+<tr><td><code>request:respond(res)</code></td><td>Sends the reply. Call it once per request.</td></tr>
+</tbody>
+</table>
+<p><code>respond</code> and the returned value take the same shapes: a plain string, which is sent as a <code>200</code> with a plain text type, or a table with <code>status</code>, <code>headers</code>, and a <code>body</code> string or <code>json</code> value.</p>
+<div class="codeblock"><div class="window-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="window-title">src/main.luau</span></div><pre><code class="language-luau">--#include[net]
+
+local server = net.http.serve(8080)
+print("http://" .. server:address())
+
+server:on("request", function(req)
+    if req:path() == "/health" then
+        return { status = 200, json = { ok = true } }
+    end
+    return { status = 404, body = "not found" }
+end)</code></pre></div>
+<div class="note"><div class="note-title">Serving TLS</div><p>The server speaks plain HTTP. To put it behind HTTPS, run it behind a reverse proxy like nginx or Caddy that holds the certificate and forwards to your port.</p></div>
+
+<h2>TCP</h2>
+<p><code>net.tcp.connect(host, port)</code> opens a connection to a server and returns a <code>TcpConnection</code>. <code>net.tcp.listen(host?, port)</code> binds a <code>TcpServer</code>; the host defaults to <code>"0.0.0.0"</code>.</p>
+<table>
+<thead><tr><th>TcpServer</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>server:on("connection", fn)</code></td><td>Binds the connection receiver. The callback gets a <code>TcpConnection</code> for every client that connects, each in its own coroutine.</td></tr>
+<tr><td><code>server:accept()</code></td><td>Polling alternative: waits for the next client, or returns <code>nil</code> once the server is closed.</td></tr>
+<tr><td><code>server:address()</code></td><td>The bound <code>"ip:port"</code> string.</td></tr>
+<tr><td><code>server:close()</code></td><td>Stops listening. Wakes any pending <code>accept</code> with <code>nil</code> and ends the connection receiver. Connections already made stay open.</td></tr>
+</tbody>
+</table>
+<p>A <code>TcpConnection</code> is the same type on both sides: the one <code>connect</code> returns and the one a server hands to you. Its events and methods:</p>
+<table>
+<thead><tr><th>TcpConnection</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>conn:on("data", fn)</code></td><td>Calls <code>fn(chunk)</code> with each chunk of bytes as it arrives.</td></tr>
+<tr><td><code>conn:on("line", fn)</code></td><td>Calls <code>fn(line)</code> once per line, with the newline stripped. Use either <code>"data"</code> or <code>"line"</code>, not both.</td></tr>
+<tr><td><code>conn:on("close", fn)</code></td><td>Calls <code>fn(err)</code> once when the connection ends. <code>err</code> is <code>nil</code> for a clean end, or a message when it broke. Binding after the connection already ended fires immediately.</td></tr>
+<tr><td><code>conn:read(count?)</code></td><td>Reads up to <code>count</code> bytes, or one chunk if left out. <code>nil</code> at the end.</td></tr>
+<tr><td><code>conn:readLine()</code></td><td>Reads one line without the newline. <code>nil</code> at the end.</td></tr>
+<tr><td><code>conn:readUntil(delimiter)</code></td><td>Reads up to a one byte delimiter, which is dropped.</td></tr>
+<tr><td><code>conn:readAll()</code></td><td>Reads until the other side closes.</td></tr>
+<tr><td><code>conn:write(data)</code></td><td>Sends a string or buffer.</td></tr>
+<tr><td><code>conn:peerAddress()</code></td><td>The far end's <code>"ip:port"</code>.</td></tr>
+<tr><td><code>conn:localAddress()</code></td><td>This end's <code>"ip:port"</code>.</td></tr>
+<tr><td><code>conn:close()</code></td><td>Closes the connection, stops its receivers, and fires the <code>"close"</code> event.</td></tr>
+</tbody>
+</table>
+<div class="codeblock"><div class="window-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="window-title">src/main.luau</span></div><pre><code class="language-luau">--#include[net]
+
+local conn = net.tcp.connect("example.com", 7)
+conn:on("data", function(chunk)
+    print("echoed back: " .. chunk)
+    conn:close()
+end)
+conn:write("hello")</code></pre></div>
+
+<h2>UDP</h2>
+<p><code>net.udp.bind(host?, port?)</code> makes a <code>UdpSocket</code>. The host defaults to <code>"0.0.0.0"</code> and the port to <code>0</code>, a free one picked by the OS. UDP has no connections; you send to and receive from addresses directly, one datagram at a time.</p>
+<table>
+<thead><tr><th>UdpSocket</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>sock:on("message", fn)</code></td><td>Calls <code>fn(data, ip, port)</code> for every datagram that arrives, each in its own coroutine.</td></tr>
+<tr><td><code>sock:sendTo(data, host, port)</code></td><td>Sends one datagram, returns bytes sent.</td></tr>
+<tr><td><code>sock:recvFrom()</code></td><td>Polling alternative: waits for a datagram and returns the data, the sender's IP, and its port.</td></tr>
+<tr><td><code>sock:connect(host, port)</code></td><td>Fixes a default peer so you can use <code>send</code> and <code>recv</code>.</td></tr>
+<tr><td><code>sock:send(data)</code></td><td>Sends to the connected peer, returns bytes sent.</td></tr>
+<tr><td><code>sock:recv()</code></td><td>Receives from the connected peer.</td></tr>
+<tr><td><code>sock:broadcast(on?)</code></td><td>Allows sending to a broadcast address.</td></tr>
+<tr><td><code>sock:localAddress()</code></td><td>The socket's own <code>"ip:port"</code>.</td></tr>
+<tr><td><code>sock:close()</code></td><td>Closes the socket and ends its message receiver. Further calls on it raise an error.</td></tr>
+</tbody>
+</table>
+<div class="codeblock"><div class="window-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="window-title">src/main.luau</span></div><pre><code class="language-luau">--#include[net]
+
+local sock = net.udp.bind("0.0.0.0", 9000)
+sock:on("message", function(data, ip, port)
+    sock:sendTo("echo: " .. data, ip, port)
+end)</code></pre></div>
+
+<h2>IPC</h2>
+<p>IPC is like TCP but for talking between programs on the same machine, with no network involved. It uses named pipes on Windows and Unix domain sockets elsewhere. You give a channel a name; both sides use the same name.</p>
+<table>
+<thead><tr><th>Function</th><th>Returns</th></tr></thead>
+<tbody>
+<tr><td><code>net.ipc.connect(name)</code></td><td>An <code>IpcConnection</code> to a listener with that name.</td></tr>
+<tr><td><code>net.ipc.listen(name)</code></td><td>An <code>IpcServer</code>.</td></tr>
+</tbody>
+</table>
+<p>A plain name like <code>"my-app"</code> is a private, machine wide channel. A name with a slash, like <code>"/tmp/my.sock"</code>, is treated as a socket file path.</p>
+<table>
+<thead><tr><th>IpcServer</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>server:on("connection", fn)</code></td><td>Binds the connection receiver. The callback gets an <code>IpcConnection</code> per client.</td></tr>
+<tr><td><code>server:accept()</code></td><td>Polling alternative: the next connection, or <code>nil</code> once closed.</td></tr>
+<tr><td><code>server:name()</code></td><td>The channel name it was created with.</td></tr>
+<tr><td><code>server:close()</code></td><td>Stops listening and ends the receiver.</td></tr>
+</tbody>
+</table>
+<table>
+<thead><tr><th>IpcConnection</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>conn:on("data", fn)</code></td><td>Calls <code>fn(chunk)</code> per chunk of bytes.</td></tr>
+<tr><td><code>conn:on("line", fn)</code></td><td>Calls <code>fn(line)</code> per line. One of <code>"data"</code> or <code>"line"</code>, not both.</td></tr>
+<tr><td><code>conn:on("close", fn)</code></td><td>Calls <code>fn(err)</code> once when the connection ends.</td></tr>
+<tr><td><code>conn:read(count?)</code></td><td>Reads up to <code>count</code> bytes, or one chunk. <code>nil</code> at the end.</td></tr>
+<tr><td><code>conn:readLine()</code></td><td>Reads one line. <code>nil</code> at the end.</td></tr>
+<tr><td><code>conn:write(data)</code></td><td>Sends a string or buffer.</td></tr>
+<tr><td><code>conn:close()</code></td><td>Closes the connection, stops its receivers, and fires <code>"close"</code>.</td></tr>
+</tbody>
+</table>
+<div class="note"><div class="note-title">Close your IPC connections</div><p>Windows named pipes have no half close, so a receiver on an IPC connection cannot tell the other side is done until the connection actually closes. Call <code>conn:close()</code> when a conversation is over, or a bound receiver will keep the program alive waiting for more data.</p></div>
+<div class="codeblock"><div class="window-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="window-title">src/main.luau</span></div><pre><code class="language-luau">--#include[net]
+
+-- server.luau
+local server = net.ipc.listen("my-app")
+server:on("connection", function(conn)
+    conn:on("line", function(line)
+        print("got: " .. line)
+        conn:close()
+    end)
+end)
+
+-- client.luau
+local conn = net.ipc.connect("my-app")
+conn:write("hello from the other process\n")</code></pre></div>
+
+<h2>DNS</h2>
+<p><code>net.dns</code> looks names up through the system's resolver.</p>
+<table>
+<thead><tr><th>Function</th><th>Returns</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>net.dns.lookup(host)</code></td><td><code>{ string }</code></td><td>Every IP address for a host.</td></tr>
+<tr><td><code>net.dns.lookupOne(host)</code></td><td><code>string?</code></td><td>Just the first address, or <code>nil</code>.</td></tr>
+<tr><td><code>net.dns.reverse(ip)</code></td><td><code>{ string }</code></td><td>The host names that point at an IP.</td></tr>
+<tr><td><code>net.dns.resolve(name, type)</code></td><td><code>{ any }</code></td><td>Records of a type; see below.</td></tr>
+</tbody>
+</table>
+<p><code>resolve</code> understands <code>"A"</code> and <code>"AAAA"</code> (arrays of IP strings), <code>"MX"</code> (tables with <code>priority</code> and <code>host</code>), <code>"TXT"</code> (arrays of strings), <code>"SRV"</code> (tables with <code>priority</code>, <code>weight</code>, <code>port</code>, <code>target</code>), <code>"NS"</code> (arrays of names), and other types like <code>"CNAME"</code> as arrays of text.</p>
+<div class="codeblock"><div class="window-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="window-title">src/main.luau</span></div><pre><code class="language-luau">--#include[net]
+
+for _, ip in net.dns.lookup("example.com") do
+    print(ip)
+end
+
+for _, mx in net.dns.resolve("example.com", "MX") do
+    print(mx.priority, mx.host)
+end</code></pre></div>
+
+<h2>WebSocket</h2>
+<p><code>net.ws.connect(url)</code> opens a client to a <code>ws://</code> or <code>wss://</code> server and returns a <code>WebSocket</code>. <code>net.ws.listen(host?, port)</code> starts a <code>WebSocketServer</code>; the host defaults to <code>"0.0.0.0"</code>.</p>
+<table>
+<thead><tr><th>WebSocketServer</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>server:on("connection", fn)</code></td><td>Binds the connection receiver. The callback gets a <code>WebSocket</code> for every client that finishes the handshake.</td></tr>
+<tr><td><code>server:accept()</code></td><td>Polling alternative: the next upgraded connection, or <code>nil</code> once closed.</td></tr>
+<tr><td><code>server:address()</code></td><td>The bound <code>"ip:port"</code> string.</td></tr>
+<tr><td><code>server:close()</code></td><td>Stops listening and ends the receiver.</td></tr>
+</tbody>
+</table>
+<p>A <code>WebSocket</code> is the same type on both sides:</p>
+<table>
+<thead><tr><th>WebSocket</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>ws:on("message", fn)</code></td><td>Calls <code>fn(msg)</code> with a message table for every text, binary, ping, or pong message.</td></tr>
+<tr><td><code>ws:on("close", fn)</code></td><td>Calls <code>fn(code, reason)</code> once when the socket ends. <code>code</code> and <code>reason</code> come from the close frame when there is one; on a transport error <code>code</code> is <code>nil</code> and <code>reason</code> carries the error text.</td></tr>
+<tr><td><code>ws:send(text)</code></td><td>Sends a text message.</td></tr>
+<tr><td><code>ws:sendBinary(data)</code></td><td>Sends a binary message from a string or buffer.</td></tr>
+<tr><td><code>ws:ping(data?)</code></td><td>Sends a ping.</td></tr>
+<tr><td><code>ws:receive()</code></td><td>Polling alternative: waits for the next message table. <code>nil</code> when the socket ends.</td></tr>
+<tr><td><code>ws:close(code?, reason?)</code></td><td>Sends a close frame, stops the receivers, and fires <code>"close"</code>.</td></tr>
+<tr><td><code>ws:peerAddress()</code></td><td>The far end's address, or the URL it connected to.</td></tr>
+</tbody>
+</table>
+<p>A message is a table with a <code>type</code> of <code>"text"</code>, <code>"binary"</code>, <code>"ping"</code>, or <code>"pong"</code>. Text and binary messages carry their bytes in <code>data</code>. When polling with <code>receive</code>, a close frame also shows up as a <code>"close"</code> message with an optional <code>code</code> and <code>reason</code>.</p>
+<div class="codeblock"><div class="window-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="window-title">src/main.luau</span></div><pre><code class="language-luau">--#include[net]
+
+local server = net.ws.listen("127.0.0.1", 8081)
+server:on("connection", function(ws)
+    ws:on("message", function(msg)
+        if msg.type == "text" then
+            ws:send("echo: " .. msg.data)
+        end
+    end)
+end)
+
+local client = net.ws.connect("ws://127.0.0.1:8081/")
+client:on("message", function(msg)
+    print("got: " .. msg.data)
+    client:close(1000, "done")
+    server:close()
+end)
+client:send("hello")</code></pre></div>
+
+<h2>FTP and sinks</h2>
+<p><code>net.ftp.connect</code> opens an FTP session. Pass a table with <code>host</code> and the optional <code>port</code> (21 by default), <code>user</code>, and <code>password</code>.</p>
+<table>
+<thead><tr><th>FtpSession</th><th>Returns</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>ftp:pwd()</code></td><td><code>string</code></td><td>The current directory.</td></tr>
+<tr><td><code>ftp:cwd(path)</code></td><td><code>nil</code></td><td>Changes directory. <code>ftp:cdup()</code> goes up one.</td></tr>
+<tr><td><code>ftp:list(path?)</code></td><td><code>{ string }</code></td><td>A detailed listing. <code>ftp:nameList(path?)</code> gives just names.</td></tr>
+<tr><td><code>ftp:mkdir(path)</code></td><td><code>nil</code></td><td>Makes a directory. <code>removeDir</code> removes one.</td></tr>
+<tr><td><code>ftp:remove(path)</code></td><td><code>nil</code></td><td>Deletes a file.</td></tr>
+<tr><td><code>ftp:rename(from, to)</code></td><td><code>nil</code></td><td>Renames or moves.</td></tr>
+<tr><td><code>ftp:size(path)</code></td><td><code>number</code></td><td>A file's size in bytes.</td></tr>
+<tr><td><code>ftp:download(remote, into?)</code></td><td><code>string | number</code></td><td>Downloads a file. See sinks below.</td></tr>
+<tr><td><code>ftp:downloadTo(remote, localPath)</code></td><td><code>string</code></td><td>Downloads straight to a local file.</td></tr>
+<tr><td><code>ftp:upload(remote, source)</code></td><td><code>number</code></td><td>Uploads a string, buffer, or sink.</td></tr>
+<tr><td><code>ftp:uploadFile(remote, localPath)</code></td><td><code>number</code></td><td>Uploads a local file.</td></tr>
+<tr><td><code>ftp:close()</code></td><td><code>nil</code></td><td>Ends the session politely.</td></tr>
+</tbody>
+</table>
+
+<h3>Sinks</h3>
+<p>A sink is a place to pour bytes into as they arrive, then turn into a real file when you are ready. <code>net.sink()</code> makes an in memory sink; <code>net.sink({ file = path })</code> makes one backed by a file on disk, which is the right choice for large downloads that should not sit in memory. The path follows the same rules as the <a href="fs.html">fs library</a>, so <code>@self</code> and friends work.</p>
+<table>
+<thead><tr><th>Sink</th><th>Returns</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>sink:write(data)</code></td><td><code>nil</code></td><td>Appends a string or buffer.</td></tr>
+<tr><td><code>sink:bytes()</code></td><td><code>string</code></td><td>Everything gathered so far.</td></tr>
+<tr><td><code>sink:buffer()</code></td><td><code>buffer</code></td><td>The contents as a Luau buffer.</td></tr>
+<tr><td><code>sink:len()</code></td><td><code>number</code></td><td>How many bytes are in the sink. <code>#sink</code> works too.</td></tr>
+<tr><td><code>sink:save(path)</code></td><td><code>string</code></td><td>Writes the contents to a real file and returns its path.</td></tr>
+<tr><td><code>sink:clear()</code></td><td><code>nil</code></td><td>Empties the sink.</td></tr>
+<tr><td><code>sink:isFile()</code></td><td><code>boolean</code></td><td>True for a file backed sink.</td></tr>
+<tr><td><code>sink:path()</code></td><td><code>string?</code></td><td>The backing file path, or <code>nil</code> for a memory sink.</td></tr>
+</tbody>
+</table>
+<p>Passing a sink to <code>ftp:download</code> pours the remote file into it and returns the byte count instead of the data. Then <code>sink:save</code> writes it to a real file. This keeps a big transfer off the Lua side until you decide where it goes.</p>
+<div class="codeblock"><div class="window-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="window-title">src/main.luau</span></div><pre><code class="language-luau">--#include[net]
+
+local ftp = net.ftp.connect({ host = "ftp.example.com", user = "me", password = "secret" })
+
+-- Small file: get the bytes directly.
+local readme = ftp:download("README.txt")
+
+-- Large file: stream it into a file backed sink, then save it.
+local sink = net.sink({ file = "@self/downloads/big.zip" })
+ftp:download("archive/big.zip", sink)
+local saved = sink:save("@self/downloads/big.zip")
+print("saved " .. #sink .. " bytes to " .. saved)
+
+ftp:upload("upload/notes.txt", "written from lehua\n")
+ftp:close()</code></pre></div>
+<div class="note"><div class="note-title">Errors</div><p>Every <code>net</code> call raises a Lua error when something goes wrong, such as a refused connection, a DNS miss, or an FTP command that fails. Wrap calls in <code>pcall</code> when you want to handle trouble yourself. Errors raised inside an event callback are printed to stderr and do not stop the program; on a stream connection a broken transport reaches you through the <code>"close"</code> event's <code>err</code> argument.</p></div>
+</article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer>Lehua is built in Rust on mlua and tokio. Made for people who love Luau.</footer>
+<script src="assets/site.js" defer></script>
+</body>
+</html>

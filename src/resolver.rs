@@ -83,7 +83,7 @@ impl Resolver {
                 return Ok(Resolved::Builtin(req.to_string()));
             }
             return Err(LehuaError::msg(format!(
-                "library '{req}' is required but not included — add `--#include[{req}]` to a source file"
+                "library '{req}' is required but not included - add `--#include[{req}]` to a source file"
             )));
         }
 
@@ -129,7 +129,7 @@ impl Resolver {
             let desc = if r.description.is_empty() {
                 String::new()
             } else {
-                format!(" — {}", r.description)
+                format!(" - {}", r.description)
             };
             Err(LehuaError::msg(format!(
                 "root '{}' v{}{desc}: entry '{}' not found under '{dir}'",
