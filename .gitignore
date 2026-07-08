@@ -1,0 +1,18 @@
+# Rust build artifacts
+/target/
+
+# Native libraries built or loaded at runtime
+*.dll
+*.so
+*.dylib
+
+# OS junk
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor/IDE
+.vscode/
+.idea/
+*.swp
+*.swo

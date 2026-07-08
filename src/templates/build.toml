@@ -1,0 +1,10 @@
+[project]
+name = "{name}"
+version = "0.1.0"
+entry = "src/main.luau"
+
+[build]
+output = "dist"
+
+[roots]
+path = "roots"

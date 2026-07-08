@@ -1,0 +1,32 @@
+[package]
+name = "lehua"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.80"
+description = "Lehua — the next-generation Luau runtime: compiled, multithreaded, batteries-included."
+license = "MIT"
+
+[[bin]]
+name = "lehua"
+path = "src/main.rs"
+
+[dependencies]
+mlua = { version = "0.12", features = ["luau-jit", "async", "error-send"] }
+tokio = { version = "1.52", features = ["rt", "rt-multi-thread", "macros", "sync", "time"] }
+async-channel = "2.5"
+clap = { version = "4.6", features = ["derive"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+toml = "1.1"
+libloading = "0.9"
+flate2 = "1.1"
+base64 = "0.22"
+anyhow = "1.0"
+thiserror = "2.0"
+sysinfo = "0.39"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+strip = true
+codegen-units = 1

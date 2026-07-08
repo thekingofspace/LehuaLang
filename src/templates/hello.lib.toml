@@ -1,0 +1,5 @@
+[root]
+name = "hello"
+version = "0.1.0"
+description = "Example root package"
+entry = "init.luau"

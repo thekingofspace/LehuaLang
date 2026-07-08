@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The process library · Lehua</title>
+<meta name="description" content="The process library. Lehua is a standalone Luau runtime that compiles to a single executable.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='6' fill='%23d94a3d'/%3E%3Cg fill='%23e5675b'%3E%3Cellipse cx='16' cy='6' rx='3.4' ry='5'/%3E%3Cellipse cx='16' cy='26' rx='3.4' ry='5'/%3E%3Cellipse cx='6' cy='16' rx='5' ry='3.4'/%3E%3Cellipse cx='26' cy='16' rx='5' ry='3.4'/%3E%3C/g%3E%3Ccircle cx='16' cy='16' r='3' fill='%23ffd24d'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="assets/styles.css">
+<script>(function(){try{var t=localStorage.getItem('lehua-theme');if(!t)t=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light';document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="navbar">
+  <button id="menu-btn" class="icon-btn" aria-label="Open menu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16" stroke-linecap="round"/></svg></button>
+  <a class="brand" href="index.html"><svg viewBox="0 0 32 32"><circle cx="16" cy="16" r="6" fill="#d94a3d"/><g fill="#e5675b"><ellipse cx="16" cy="6" rx="3.4" ry="5"/><ellipse cx="16" cy="26" rx="3.4" ry="5"/><ellipse cx="6" cy="16" rx="5" ry="3.4"/><ellipse cx="26" cy="16" rx="5" ry="3.4"/></g><circle cx="16" cy="16" r="3" fill="#ffd24d"/></svg> Lehua</a>
+  <div class="nav-spacer"></div>
+  <nav class="nav-links">
+    <a class="docs" href="introduction.html">Docs</a>
+    <a class="gh" href="https://github.com/lehua-lang/lehua"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.58 2 12.25c0 4.53 2.87 8.37 6.84 9.73.5.1.68-.22.68-.49v-1.7c-2.78.62-3.37-1.22-3.37-1.22-.45-1.18-1.11-1.5-1.11-1.5-.91-.64.07-.62.07-.62 1 .07 1.53 1.06 1.53 1.06.9 1.58 2.36 1.12 2.94.86.09-.67.35-1.12.63-1.38-2.22-.26-4.56-1.14-4.56-5.07 0-1.12.39-2.03 1.03-2.75-.1-.26-.45-1.3.1-2.71 0 0 .84-.28 2.75 1.05a9.3 9.3 0 015 0c1.91-1.33 2.75-1.05 2.75-1.05.55 1.41.2 2.45.1 2.71.64.72 1.03 1.63 1.03 2.75 0 3.94-2.34 4.81-4.57 5.06.36.32.68.94.68 1.9v2.82c0 .27.18.6.69.49A10.02 10.02 0 0022 12.25C22 6.58 17.52 2 12 2z"/></svg> GitHub</a>
+  </nav>
+  <button id="theme-btn" class="icon-btn" aria-label="Toggle theme"><svg id="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z" stroke-linejoin="round"/></svg><svg id="icon-sun" style="display:none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.4 1.4M17.6 17.6L19 19M19 5l-1.4 1.4M6.4 17.6L5 19" stroke-linecap="round"/></svg></button>
+</header>
+<div class="backdrop" id="backdrop"></div>
+<div class="layout">
+  <aside class="sidebar" id="sidebar">
+    <label class="side-search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3" stroke-linecap="round"/></svg><input id="side-search" type="text" placeholder="Search docs" aria-label="Search the docs"><kbd>Ctrl K</kbd></label>
+    <nav id="side-nav" class="side-nav"></nav>
+  </aside>
+  <main class="content">
+    <article class="doc-page">
+<p class="eyebrow">Library Reference</p>
+<h1>The process library</h1>
+<p class="lead">The <code>process</code> library runs other programs, reads and sets environment values, reports facts about the machine, and lets you hook into the program's own lifecycle with a heartbeat and a close handler.</p>
+
+<h2>Including process</h2>
+<div class="codeblock"><pre><code class="language-luau">--#include[process]</code></pre></div>
+<div class="note"><div class="note-title">Threads</div><p>Running a program with <code>run</code> or <code>exec</code>, and waiting with <code>sleep</code>, happen on a background thread. They pause only the coroutine that called them, so the rest of your program and any parallel workers keep going.</p></div>
+
+<h2>Fields</h2>
+<table>
+<thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>process.args</code></td><td><code>{ string }</code></td><td>The arguments passed after <code>--</code> on the command line.</td></tr>
+<tr><td><code>process.pid</code></td><td><code>number</code></td><td>The id of this process.</td></tr>
+<tr><td><code>process.platform</code></td><td><code>string</code></td><td>The operating system, such as "windows", "linux", or "macos".</td></tr>
+<tr><td><code>process.arch</code></td><td><code>string</code></td><td>The cpu type, such as "x86_64" or "aarch64".</td></tr>
+</tbody>
+</table>
+
+<h2>Working directory and paths</h2>
+<table>
+<thead><tr><th>Function</th><th>Returns</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>process.cwd()</code></td><td><code>string</code></td><td>The current working directory.</td></tr>
+<tr><td><code>process.chdir(path)</code></td><td><code>nil</code></td><td>Changes the working directory. Accepts the same path forms as fs.</td></tr>
+<tr><td><code>process.exepath()</code></td><td><code>string</code></td><td>The full path of the running executable.</td></tr>
+</tbody>
+</table>
+
+<h2>Environment variables</h2>
+<table>
+<thead><tr><th>Function</th><th>Returns</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>process.getenv(name)</code></td><td><code>string?</code></td><td>The value, or nil if it is not set.</td></tr>
+<tr><td><code>process.setenv(name, value?)</code></td><td><code>nil</code></td><td>Sets the value. Pass nil to remove it.</td></tr>
+<tr><td><code>process.env()</code></td><td><code>{ [string]: string }</code></td><td>A table of every environment variable.</td></tr>
+</tbody>
+</table>
+
+<h2>Running programs</h2>
+<p><code>process.run</code> starts a program directly, with no shell. You pass the program and a list of arguments. <code>process.exec</code> runs a command line through the system shell, so pipes and other shell features work. Both wait for the program to finish and return a RunResult.</p>
+<table>
+<thead><tr><th>Function</th><th>Returns</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>process.run(program, args?, opts?)</code></td><td><code>RunResult</code></td><td>Runs a program with a list of arguments.</td></tr>
+<tr><td><code>process.exec(command, opts?)</code></td><td><code>RunResult</code></td><td>Runs a command line through the shell.</td></tr>
+</tbody>
+</table>
+<p>The optional <code>opts</code> table can set the working directory:</p>
+<table>
+<thead><tr><th>Option</th><th>Type</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>opts.cwd</code></td><td><code>string?</code></td><td>Run in this folder. Accepts the same path forms as fs.</td></tr>
+</tbody>
+</table>
+
+<h3>The RunResult object</h3>
+<table>
+<thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>ok</code></td><td><code>boolean</code></td><td>True if the program finished with code 0.</td></tr>
+<tr><td><code>code</code></td><td><code>number</code></td><td>The exit code. This is -1 if the program was stopped by a signal.</td></tr>
+<tr><td><code>stdout</code></td><td><code>string</code></td><td>Everything the program wrote to standard output.</td></tr>
+<tr><td><code>stderr</code></td><td><code>string</code></td><td>Everything the program wrote to standard error.</td></tr>
+</tbody>
+</table>
+<div class="codeblock"><div class="window-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="window-title">src/main.luau</span></div><pre><code class="language-luau">local r = process.run("git", { "status", "-s" }, { cwd = "@Game" })
+if r.ok then
+    print(r.stdout)
+else
+    print("git failed with code", r.code, r.stderr)
+end
+
+local out = process.exec("echo hello | sort")
+print(out.stdout)</code></pre></div>
+
+<h2>Timing and lifecycle</h2>
+<table>
+<thead><tr><th>Function</th><th>Returns</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>process.sleep(ms)</code></td><td><code>nil</code></td><td>Waits for the given milliseconds. Yields, so other coroutines keep running.</td></tr>
+<tr><td><code>process.exit(code?)</code></td><td>never returns</td><td>Runs the close handlers, then ends the program with the given code. The default code is 0.</td></tr>
+</tbody>
+</table>
+
+<h2>BindToHeartbeat</h2>
+<p>A heartbeat callback runs about 60 times a second, once your main code returns. It receives <code>dt</code>, the number of seconds since the last beat. This is handy for a game loop or any steady update.</p>
+<p>Each binding has a name. Binding the same name again replaces its callback. The heartbeat keeps the program alive, so it runs until you remove every binding or call <code>process.exit</code>.</p>
+<table>
+<thead><tr><th>Function</th><th>Returns</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>process.BindToHeartbeat(name, callback)</code></td><td><code>nil</code></td><td>Binds a callback under a name. It is called as <code>callback(dt)</code>.</td></tr>
+<tr><td><code>process.UnbindFromHeartbeat(name)</code></td><td><code>boolean</code></td><td>Removes the binding with that name. Returns true if one was there.</td></tr>
+</tbody>
+</table>
+<div class="codeblock"><div class="window-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="window-title">src/main.luau</span></div><pre><code class="language-luau">--#include[process]
+
+local elapsed = 0
+process.BindToHeartbeat("tick", function(dt)
+    elapsed += dt
+    if elapsed >= 3 then
+        print("three seconds passed, stopping")
+        process.UnbindFromHeartbeat("tick")
+    end
+end)
+
+print("main returned, the heartbeat now drives the program")</code></pre></div>
+<div class="note"><div class="note-title">Note</div><p>The heartbeat only runs after your main chunk returns. If your main code has its own <code>while true</code> loop that never returns, the heartbeat never starts.</p></div>
+
+<h2>BindToClose</h2>
+<p>A close callback runs when the program is about to end, whether that is a normal finish, an error, or a call to <code>process.exit</code>. It receives the exit code as a number.</p>
+<p>Close callbacks run one after another, synchronously, so keep them quick. Writing a file with <code>fs</code> is fine. Avoid calls that yield inside a close callback, such as <code>process.run</code>, <code>process.exec</code>, <code>process.sleep</code>, or a Port <code>Pop</code>.</p>
+<table>
+<thead><tr><th>Function</th><th>Returns</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>process.BindToClose(callback)</code></td><td><code>nil</code></td><td>Adds a callback. It is called as <code>callback(code)</code>. You can add more than one.</td></tr>
+</tbody>
+</table>
+<div class="codeblock"><div class="window-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="window-title">src/main.luau</span></div><pre><code class="language-luau">--#include[process]
+
+process.BindToClose(function(code)
+    print("shutting down, exit code:", code)
+end)</code></pre></div>
+
+<h2>Machine information</h2>
+<table>
+<thead><tr><th>Function</th><th>Returns</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>process.cpus()</code></td><td><code>number</code></td><td>How many cpu threads are available.</td></tr>
+<tr><td><code>process.memory()</code></td><td><code>Memory</code></td><td>Memory figures in bytes.</td></tr>
+<tr><td><code>process.system()</code></td><td><code>System</code></td><td>Details about the operating system.</td></tr>
+</tbody>
+</table>
+
+<h3>The Memory object</h3>
+<table>
+<thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>total</code></td><td><code>number</code></td><td>Total physical memory in bytes.</td></tr>
+<tr><td><code>available</code></td><td><code>number</code></td><td>Memory that can still be used, in bytes.</td></tr>
+<tr><td><code>used</code></td><td><code>number</code></td><td>Memory in use across the machine, in bytes.</td></tr>
+<tr><td><code>processUsed</code></td><td><code>number?</code></td><td>Memory this process is using, in bytes.</td></tr>
+</tbody>
+</table>
+
+<h3>The System object</h3>
+<table>
+<thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>os</code></td><td><code>string</code></td><td>The operating system name, like "windows".</td></tr>
+<tr><td><code>arch</code></td><td><code>string</code></td><td>The cpu type.</td></tr>
+<tr><td><code>family</code></td><td><code>string</code></td><td>The family, like "windows" or "unix".</td></tr>
+<tr><td><code>name</code></td><td><code>string</code></td><td>The friendly system name.</td></tr>
+<tr><td><code>kernel</code></td><td><code>string</code></td><td>The kernel version.</td></tr>
+<tr><td><code>version</code></td><td><code>string</code></td><td>The long system version.</td></tr>
+<tr><td><code>hostname</code></td><td><code>string</code></td><td>The machine's host name.</td></tr>
+</tbody>
+</table>
+<div class="codeblock"><div class="window-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="window-title">src/main.luau</span></div><pre><code class="language-luau">local mem = process.memory()
+print("total MB:", math.floor(mem.total / 1048576))
+print("this process MB:", math.floor((mem.processUsed or 0) / 1048576))
+
+local sys = process.system()
+print(sys.name, sys.kernel, "on", sys.hostname)
+print("cpu threads:", process.cpus())</code></pre></div>
+</article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer>Lehua is built in Rust on mlua and tokio. Made for people who love Luau.</footer>
+<script src="assets/site.js" defer></script>
+</body>
+</html>
