@@ -32,7 +32,7 @@
       <h1>Modules and require</h1>
       <p>Every module is given its own <code>require</code>, <code>parallel</code>, <code>__dirname</code>, and <code>__filename</code>. You do not need to declare them. <code>require</code> understands a few forms:</p>
       <ul>
-        <li><code>require("./util")</code> loads a file next to the current one. The <code>.luau</code> ending is added for you.</li>
+        <li><code>require("./util")</code> loads a file by relative path. While a module's own top level code is running, this is always the module's own folder, so a module can reach its children on initial load. Inside a function called after load, the folder of the file that started the call chain is tried first, then each module along the chain, so a path handed through module functions means what the original caller expects. The <code>.luau</code> ending is added for you.</li>
         <li><code>require("../shared/log")</code> walks up to a parent folder.</li>
         <li><code>require("./thing")</code> where <code>thing</code> is a folder with an <code>init.luau</code> loads that init file.</li>
         <li><code>require("@self/helper")</code> points at the current module's own folder. This is handy inside an <code>init.luau</code>.</li>

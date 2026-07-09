@@ -37,12 +37,12 @@
 <div class="codeblock"><pre><code class="language-luau">--#include[fs]</code></pre></div>
 
 <h2>How paths are resolved</h2>
-<p>Every function that takes a path follows the same rules. A relative path resolves against the folder of the script that included <code>fs</code>, not the working directory, so a module can reach files next to itself no matter where the program runs from. An absolute path is used as it is.</p>
+<p>Every function that takes a path follows the same rules. While a module's own top level code is running, a relative path stays inside the module's own folder, so a module can reach its files on initial load. Inside a function called after load, the path resolves along the call chain: the folder of the file that started the call is tried first, then each module along the chain, and the first place where the path exists wins. A path that exists nowhere yet, for example a file about to be written, lands next to the file that started the call. This means a module function can take a path from its caller and it will mean what the caller expects. Use <code>@self</code> when a module wants its own folder no matter who called it. An absolute path is used as it is.</p>
 <table>
 <thead><tr><th>Form</th><th>Meaning</th></tr></thead>
 <tbody>
-<tr><td><code>./name</code></td><td>next to the current script</td></tr>
-<tr><td><code>../name</code></td><td>up one folder from the current script</td></tr>
+<tr><td><code>./name</code></td><td>next to the running script, then along the call chain</td></tr>
+<tr><td><code>../name</code></td><td>up one folder, resolved the same way</td></tr>
 <tr><td><code>@self/name</code></td><td>the current module's own folder</td></tr>
 <tr><td><code>@Alias/name</code></td><td>an alias from .luaurc, for example @root</td></tr>
 <tr><td><code>/x</code> or <code>C:/x</code></td><td>an absolute path, used as given</td></tr>

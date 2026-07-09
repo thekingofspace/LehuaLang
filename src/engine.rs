@@ -41,6 +41,7 @@ impl Engine {
     }
 
     pub fn call_chain(&self, lua: &Lua) -> Vec<String> {
+        let loading = lua.app_data_ref::<LoadingMap>().map(|l| l.clone());
         let mut frames: Vec<String> = Vec::new();
         let mut level = 0;
         loop {
@@ -55,8 +56,13 @@ impl Engine {
                 None => break,
                 Some(Some(src)) => {
                     let id = src.strip_prefix('@').unwrap_or(&src);
-                    if self.provider.exists(id) && frames.last().map(|l| l != id).unwrap_or(true) {
-                        frames.push(id.to_string());
+                    if self.provider.exists(id) {
+                        if frames.last().map(|l| l != id).unwrap_or(true) {
+                            frames.push(id.to_string());
+                        }
+                        if loading.as_ref().map(|l| l.is_loading(id)).unwrap_or(false) {
+                            break;
+                        }
                     }
                 }
                 Some(None) => {}
@@ -81,10 +87,19 @@ impl Engine {
     }
 }
 
+#[derive(Clone, Default)]
+pub struct LoadingMap(Rc<RefCell<HashMap<String, (usize, Rc<tokio::sync::Notify>)>>>);
+
+impl LoadingMap {
+    fn is_loading(&self, id: &str) -> bool {
+        self.0.borrow().contains_key(id)
+    }
+}
+
 pub struct VmContext {
     pub engine: Arc<Engine>,
     pub cache: RefCell<HashMap<String, Value>>,
-    pub loading: RefCell<HashMap<String, (usize, Rc<tokio::sync::Notify>)>>,
+    pub loading: LoadingMap,
     pub waiting: RefCell<HashMap<usize, String>>,
     pub dlls: Rc<RefCell<HashMap<String, Arc<libloading::Library>>>>,
     pub sched: Rc<VmScheduler>,
@@ -95,7 +110,7 @@ impl VmContext {
         Rc::new(VmContext {
             engine,
             cache: RefCell::new(HashMap::new()),
-            loading: RefCell::new(HashMap::new()),
+            loading: LoadingMap::default(),
             waiting: RefCell::new(HashMap::new()),
             dlls: Rc::new(RefCell::new(HashMap::new())),
             sched: Rc::new(VmScheduler::default()),
@@ -173,6 +188,7 @@ pub fn make_vm(engine: Arc<Engine>) -> Result<(Lua, Rc<VmContext>)> {
     lua.enable_jit(true);
     install_pretty_print(&lua)?;
     let ctx = VmContext::new(engine);
+    lua.set_app_data(ctx.loading.clone());
     Ok((lua, ctx))
 }
 
@@ -476,7 +492,7 @@ struct LoadingGuard {
 
 impl Drop for LoadingGuard {
     fn drop(&mut self) {
-        self.ctx.loading.borrow_mut().remove(&self.id);
+        self.ctx.loading.0.borrow_mut().remove(&self.id);
         self.notify.notify_waiters();
     }
 }
@@ -493,7 +509,7 @@ impl Drop for WaitingGuard {
 }
 
 fn detect_require_cycle(ctx: &Rc<VmContext>, id: &str, me: usize) -> bool {
-    let loading = ctx.loading.borrow();
+    let loading = ctx.loading.0.borrow();
     let waiting = ctx.waiting.borrow();
     let mut cur = id.to_string();
     for _ in 0..1024 {
@@ -522,7 +538,7 @@ async fn load_module(
         if let Some(v) = ctx.cache.borrow().get(id) {
             return Ok(v.clone());
         }
-        let pending = ctx.loading.borrow().get(id).cloned();
+        let pending = ctx.loading.0.borrow().get(id).cloned();
         match pending {
             Some((_, notify)) => {
                 if detect_require_cycle(ctx, id, me) {
@@ -542,6 +558,7 @@ async fn load_module(
 
     let notify = Rc::new(tokio::sync::Notify::new());
     ctx.loading
+        .0
         .borrow_mut()
         .insert(id.to_string(), (me, notify.clone()));
     let guard = LoadingGuard {

@@ -86,12 +86,20 @@ impl ModuleProvider for BundleProvider {
     }
     fn exists(&self, id: &str) -> bool {
         self.files.contains_key(id)
+            || (self.prefer_disk && self.base_dir.join(crate::vpath::to_native(id)).is_file())
     }
     fn read(&self, id: &str) -> Result<String> {
-        self.files
-            .get(id)
-            .cloned()
-            .ok_or_else(|| LehuaError::msg(format!("bundled module '{id}' is missing")))
+        if let Some(text) = self.files.get(id) {
+            return Ok(text.clone());
+        }
+        if self.prefer_disk {
+            let path = self.base_dir.join(crate::vpath::to_native(id));
+            if path.is_file() {
+                return std::fs::read_to_string(&path)
+                    .map_err(|e| LehuaError::msg(format!("could not read '{id}': {e}")));
+            }
+        }
+        Err(LehuaError::msg(format!("bundled module '{id}' is missing")))
     }
     fn binary_path(&self, id: &str) -> Result<PathBuf> {
         let mut extracted = self.extracted.lock().unwrap();
