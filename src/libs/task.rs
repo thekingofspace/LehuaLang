@@ -2,9 +2,11 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
+use futures_util::StreamExt;
 use mlua::thread::ThreadStatus;
 use mlua::{
-    Function, Lua, MetaMethod, MultiValue, Thread, UserData, UserDataMethods, Value,
+    Function, IntoLuaMulti, Lua, MetaMethod, MultiValue, Thread, UserData, UserDataMethods,
+    Value,
 };
 use tokio::sync::Notify;
 
@@ -19,6 +21,10 @@ struct TaskState {
     time: Cell<f64>,
     wake: Notify,
     thread: RefCell<Option<Thread>>,
+    parked: Cell<bool>,
+    resume_args: RefCell<Option<MultiValue>>,
+    resume_wake: Notify,
+    guard: RefCell<Option<Guard>>,
 }
 
 impl TaskState {
@@ -30,6 +36,10 @@ impl TaskState {
             time: Cell::new(time),
             wake: Notify::new(),
             thread: RefCell::new(None),
+            parked: Cell::new(false),
+            resume_args: RefCell::new(None),
+            resume_wake: Notify::new(),
+            guard: RefCell::new(None),
         })
     }
 
@@ -154,10 +164,65 @@ fn close_thread(lua: &Lua, thread: &Thread) {
 fn cancel_state(lua: &Lua, state: &Rc<TaskState>) {
     state.cancelled.set(true);
     state.wake.notify_waiters();
+    state.resume_wake.notify_one();
     let thread = state.thread.borrow().clone();
     if let Some(t) = thread {
         close_thread(lua, &t);
     }
+}
+
+fn wake_parked(state: &Rc<TaskState>, sched: &Rc<VmScheduler>, args: MultiValue) {
+    state.parked.set(false);
+    *state.resume_args.borrow_mut() = Some(args);
+    *state.guard.borrow_mut() = Some(Guard::new(sched));
+    state.resume_wake.notify_one();
+}
+
+#[derive(Clone)]
+struct TaskRegistry(Registry);
+
+fn shared_registry(lua: &Lua, sched: &Rc<VmScheduler>) -> mlua::Result<Registry> {
+    if let Some(r) = lua.app_data_ref::<TaskRegistry>() {
+        return Ok(r.0.clone());
+    }
+    let registry: Registry = Rc::new(RefCell::new(std::collections::HashMap::new()));
+    lua.set_app_data(TaskRegistry(registry.clone()));
+    install_resume_hook(lua, &registry, sched)?;
+    Ok(registry)
+}
+
+fn install_resume_hook(
+    lua: &Lua,
+    registry: &Registry,
+    sched: &Rc<VmScheduler>,
+) -> mlua::Result<()> {
+    let co: mlua::Table = lua.globals().get("coroutine")?;
+    let orig: Function = co.get("resume")?;
+    let registry = registry.clone();
+    let sched = sched.clone();
+    let wrapped = lua.create_function(move |lua, mut args: MultiValue| {
+        let target = match args.iter().next() {
+            Some(Value::Thread(t)) => Some(t.clone()),
+            _ => None,
+        };
+        if let Some(t) = target {
+            let key = t.to_pointer() as usize;
+            let state = registry.borrow().get(&key).cloned();
+            if let Some(state) = state {
+                if state.parked.get() && !state.cancelled.get() {
+                    args.pop_front();
+                    wake_parked(&state, &sched, args);
+                    return true.into_lua_multi(lua);
+                }
+                if !state.finished.get() && !state.cancelled.get() {
+                    return (false, "cannot resume a task-managed thread unless it is suspended by coroutine.yield")
+                        .into_lua_multi(lua);
+                }
+            }
+        }
+        orig.call::<MultiValue>(args)
+    })?;
+    co.set("resume", wrapped)
 }
 
 async fn drive(
@@ -166,6 +231,7 @@ async fn drive(
     registry: Registry,
     thread: Thread,
     args: MultiValue,
+    park_on_yield: bool,
 ) {
     if state.cancelled.get() {
         return;
@@ -173,20 +239,52 @@ async fn drive(
     *state.thread.borrow_mut() = Some(thread.clone());
     let key = thread.to_pointer() as usize;
     register_thread(&registry, &thread, &state);
-    match thread.into_async::<()>(args) {
-        Ok(fut) => {
-            tokio::select! {
-                _ = state.wait_cancelled() => {}
-                r = fut => {
-                    if let Err(e) = r {
-                        if !state.cancelled.get() {
-                            eprintln!("lehua: task error: {}", crate::error::pretty(&e));
-                        }
-                    }
+    let mut current_args = args;
+    loop {
+        let stream = match thread.clone().into_async::<MultiValue>(current_args) {
+            Ok(s) => s,
+            Err(e) => {
+                if !state.cancelled.get() {
+                    eprintln!("lehua: task error: {}", crate::error::pretty(&e));
                 }
+                break;
             }
+        };
+        let mut stream = Box::pin(stream);
+        let step = tokio::select! {
+            _ = state.wait_cancelled() => None,
+            item = stream.next() => item,
+        };
+        drop(stream);
+        match step {
+            Some(Ok(_)) if thread.status() == ThreadStatus::Resumable => {
+                if !park_on_yield || state.cancelled.get() {
+                    break;
+                }
+                state.parked.set(true);
+                let released = state.guard.borrow_mut().take();
+                drop(released);
+                tokio::select! {
+                    _ = state.wait_cancelled() => {
+                        state.parked.set(false);
+                        break;
+                    }
+                    _ = state.resume_wake.notified() => {}
+                }
+                state.parked.set(false);
+                if state.cancelled.get() {
+                    break;
+                }
+                current_args = state.resume_args.borrow_mut().take().unwrap_or_default();
+            }
+            Some(Err(e)) => {
+                if !state.cancelled.get() {
+                    eprintln!("lehua: task error: {}", crate::error::pretty(&e));
+                }
+                break;
+            }
+            _ => break,
         }
-        Err(e) => eprintln!("lehua: task error: {e}"),
     }
     unregister_thread(&registry, key, &state);
     let _ = lua;
@@ -210,16 +308,16 @@ fn spawn_one(
 ) -> mlua::Result<()> {
     let thread = make_thread(lua, &runnable)?;
     register_thread(registry, &thread, &state);
+    *state.guard.borrow_mut() = Some(Guard::new(sched));
     let lua = lua.clone();
     let registry = registry.clone();
-    let guard = Guard::new(sched);
     tokio::task::spawn_local(async move {
-        let _guard = guard;
         if deferred {
             tokio::task::yield_now().await;
         }
-        drive(lua, state.clone(), registry, thread, args).await;
+        drive(lua, state.clone(), registry, thread, args, true).await;
         state.finished.set(true);
+        state.guard.borrow_mut().take();
     });
     Ok(())
 }
@@ -236,14 +334,15 @@ fn spawn_delayed(
         *state.thread.borrow_mut() = Some(t.clone());
         register_thread(registry, t, &state);
     }
+    *state.guard.borrow_mut() = Some(Guard::new(sched));
     let lua = lua.clone();
     let registry = registry.clone();
-    let guard = Guard::new(sched);
     tokio::task::spawn_local(async move {
-        let _guard = guard;
         if state.sleep().await {
             match make_thread(&lua, &runnable) {
-                Ok(thread) => drive(lua, state.clone(), registry.clone(), thread, args).await,
+                Ok(thread) => {
+                    drive(lua, state.clone(), registry.clone(), thread, args, true).await
+                }
                 Err(e) => eprintln!("lehua: task error: {e}"),
             }
         }
@@ -251,6 +350,7 @@ fn spawn_delayed(
             unregister_thread(&registry, t.to_pointer() as usize, &state);
         }
         state.finished.set(true);
+        state.guard.borrow_mut().take();
     });
 }
 
@@ -288,7 +388,7 @@ fn spawn_scheduled(
                             let inner = Guard::new(&sched);
                             tokio::task::spawn_local(async move {
                                 let _inner = inner;
-                                drive(lua2, run_state, registry2, thread, args2).await;
+                                drive(lua2, run_state, registry2, thread, args2, false).await;
                             });
                         }
                         Err(e) => eprintln!("lehua: task error: {e}"),
@@ -304,6 +404,7 @@ fn spawn_scheduled(
                         registry.clone(),
                         t.clone(),
                         args.clone(),
+                        false,
                     )
                     .await;
                 }
@@ -343,10 +444,37 @@ impl UserData for TaskHandle {
     }
 }
 
+fn take_over_parked(
+    registry: &Registry,
+    sched: &Rc<VmScheduler>,
+    runnable: &Runnable,
+    args: &MultiValue,
+) -> mlua::Result<Option<Rc<TaskState>>> {
+    let Runnable::Coroutine(t) = runnable else {
+        return Ok(None);
+    };
+    let key = t.to_pointer() as usize;
+    let existing = registry.borrow().get(&key).cloned();
+    let Some(existing) = existing else {
+        return Ok(None);
+    };
+    if existing.cancelled.get() || existing.finished.get() {
+        return Ok(None);
+    }
+    if existing.parked.get() {
+        wake_parked(&existing, sched, args.clone());
+        return Ok(Some(existing));
+    }
+    Err(LehuaError::msg(
+        "cannot spawn a thread the scheduler is already running; it must be suspended by coroutine.yield",
+    )
+    .into())
+}
+
 pub fn build(ctx: &LibCtx) -> mlua::Result<Value> {
     let lua = ctx.lua;
     let t = lua.create_table()?;
-    let registry: Registry = Rc::new(RefCell::new(std::collections::HashMap::new()));
+    let registry: Registry = shared_registry(lua, &ctx.sched)?;
 
     t.set(
         "wait",
@@ -365,6 +493,9 @@ pub fn build(ctx: &LibCtx) -> mlua::Result<Value> {
             lua.create_function(move |lua, mut args: MultiValue| {
                 let target = args.pop_front().unwrap_or(Value::Nil);
                 let runnable = to_runnable(target)?;
+                if let Some(existing) = take_over_parked(&registry, &sched, &runnable, &args)? {
+                    return Ok(TaskHandle { state: existing });
+                }
                 let state = TaskState::new("spawn", 0.0);
                 spawn_one(lua, &sched, &registry, state.clone(), runnable, args, false)?;
                 Ok(TaskHandle { state })
@@ -380,6 +511,9 @@ pub fn build(ctx: &LibCtx) -> mlua::Result<Value> {
             lua.create_function(move |lua, mut args: MultiValue| {
                 let target = args.pop_front().unwrap_or(Value::Nil);
                 let runnable = to_runnable(target)?;
+                if let Some(existing) = take_over_parked(&registry, &sched, &runnable, &args)? {
+                    return Ok(TaskHandle { state: existing });
+                }
                 let state = TaskState::new("defer", 0.0);
                 spawn_one(lua, &sched, &registry, state.clone(), runnable, args, true)?;
                 Ok(TaskHandle { state })
