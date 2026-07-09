@@ -159,6 +159,16 @@ fn install_pretty_print(lua: &Lua) -> mlua::Result<()> {
     lua.globals().set("print", print_fn)
 }
 
+fn write_styled(out: &mut Vec<u8>, style: bool, code: &str, text: &[u8]) {
+    if style {
+        out.extend_from_slice(format!("\u{1b}[{code}m").as_bytes());
+        out.extend_from_slice(text);
+        out.extend_from_slice(b"\x1b[0m");
+    } else {
+        out.extend_from_slice(text);
+    }
+}
+
 fn format_value(
     tostring: &Function,
     v: &Value,
@@ -168,10 +178,12 @@ fn format_value(
     style: bool,
 ) -> mlua::Result<()> {
     match v {
-        Value::Nil => out.extend_from_slice(b"nil"),
-        Value::Boolean(b) => out.extend_from_slice(if *b { b"true" } else { b"false" }),
-        Value::Integer(i) => out.extend_from_slice(i.to_string().as_bytes()),
-        Value::Number(n) => out.extend_from_slice(n.to_string().as_bytes()),
+        Value::Nil => write_styled(out, style, "90", b"nil"),
+        Value::Boolean(b) => {
+            write_styled(out, style, "94", if *b { b"true" } else { b"false" })
+        }
+        Value::Integer(i) => write_styled(out, style, "33", i.to_string().as_bytes()),
+        Value::Number(n) => write_styled(out, style, "33", n.to_string().as_bytes()),
         Value::String(s) => {
             if depth == 0 {
                 out.extend_from_slice(&s.as_bytes());
@@ -179,7 +191,14 @@ fn format_value(
                 quote_string(&s.as_bytes(), out);
             }
         }
-        Value::Table(t) => format_table(tostring, t, out, depth, path, style)?,
+        Value::Table(t) => {
+            if has_custom_tostring(t) {
+                let text = tostring.call::<mlua::LuaString>(v.clone())?;
+                out.extend_from_slice(&text.as_bytes());
+            } else {
+                format_table(tostring, t, out, depth, path, style)?
+            }
+        }
         Value::UserData(_) => {
             let text = tostring.call::<mlua::LuaString>(v.clone())?;
             if style {
@@ -192,13 +211,20 @@ fn format_value(
                 out.push(b']');
             }
         }
-        Value::LightUserData(_) if *v == Value::NULL => out.extend_from_slice(b"null"),
+        Value::LightUserData(_) if *v == Value::NULL => write_styled(out, style, "90", b"null"),
         other => {
             let text = tostring.call::<mlua::LuaString>(other.clone())?;
-            out.extend_from_slice(&text.as_bytes());
+            write_styled(out, style, "35", &text.as_bytes());
         }
     }
     Ok(())
+}
+
+fn has_custom_tostring(t: &mlua::Table) -> bool {
+    match t.metatable() {
+        Some(mt) => matches!(mt.raw_get::<Value>("__tostring"), Ok(v) if !v.is_nil()),
+        None => false,
+    }
 }
 
 fn format_table(
@@ -253,7 +279,7 @@ fn format_table(
     for (sort_key, k, v) in named {
         pad(out, depth + 1);
         if matches!(&k, Value::String(_)) && is_identifier(&sort_key) {
-            out.extend_from_slice(&sort_key);
+            write_styled(out, style, "36", &sort_key);
         } else {
             out.push(b'[');
             format_value(tostring, &k, out, depth + 1, path, style)?;

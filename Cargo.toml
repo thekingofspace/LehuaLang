@@ -1,6 +1,6 @@
 [package]
 name = "lehua"
-version = "0.2.5"
+version = "0.2.6"
 edition = "2021"
 rust-version = "1.80"
 description = "Lehua - the next-generation Luau runtime: compiled, multithreaded, batteries-included."
@@ -120,6 +120,9 @@ sysinfo = { version = "0.39", optional = true }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = ["Win32_System_Console", "Win32_Foundation"] }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
 
 [profile.release]
 opt-level = 3

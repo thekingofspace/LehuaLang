@@ -99,15 +99,14 @@ else
 end</code></pre></div>
 
 <h3>Choosing from a list</h3>
-<p>Pass an array of choices as the second argument and <code>prompt</code> turns into a small menu. It prints the message, the numbered choices, and a <code>&gt; </code> marker, then keeps asking until the answer is a valid number or matches one of the choices by name (capitalization does not matter). It returns two values: the chosen text and its number. Both are <code>nil</code> if the input ends first. An empty options list raises an error.</p>
+<p>Pass an array of choices as the second argument and <code>prompt</code> turns into a small menu. In a terminal the menu is interactive: the arrow keys (or <code>j</code>/<code>k</code>, or a digit) move the highlight and Enter confirms. Esc or Ctrl+C cancels. When input or output is redirected it falls back to printing numbered choices and a <code>&gt; </code> marker, then keeps asking until the answer is a valid number or matches one of the choices by name (capitalization does not matter). It returns two values: the chosen text and its number. Both are <code>nil</code> if the selection is cancelled or the input ends first. An empty options list raises an error.</p>
 <div class="codeblock"><div class="window-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="window-title">src/main.luau</span></div><pre><code class="language-luau">--#include[stdio]
 
 local choice, index = stdio.prompt("Pick a color:", { "red", "green", "blue" })
 -- Pick a color:
---   1) red
---   2) green
---   3) blue
--- >
+-- > red
+--   green
+--   blue
 
 if choice then
     stdio.write("you picked ", choice, " (option ", index, ")\n")
