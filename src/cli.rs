@@ -68,7 +68,7 @@ pub fn main() -> ExitCode {
     match result {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
-            eprintln!("lehua: {e}");
+            eprintln!("lehua: {}", crate::error::pretty(&e));
             ExitCode::FAILURE
         }
     }
@@ -86,7 +86,7 @@ pub fn run_embedded(bundle: Bundle, args: Vec<String>) -> ExitCode {
     match execute_bundle(bundle, exe_dir, extract, args, true) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
-            eprintln!("lehua: {e}");
+            eprintln!("lehua: {}", crate::error::pretty(&e));
             ExitCode::FAILURE
         }
     }
@@ -205,7 +205,11 @@ fn slim_runtime(includes: &[String]) -> Option<PathBuf> {
     if which_cargo().is_none() {
         return None;
     }
-    let mut features: Vec<String> = includes.iter().map(|i| format!("lib-{i}")).collect();
+    let mut features: Vec<String> = includes
+        .iter()
+        .filter(|i| i.as_str() != "dll")
+        .map(|i| format!("lib-{i}"))
+        .collect();
     features.sort();
     let features = features.join(",");
     eprintln!(

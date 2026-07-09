@@ -83,14 +83,14 @@ pub fn spawn_handler(
     let thread = match lua.create_thread(cb.clone()) {
         Ok(t) => t,
         Err(e) => {
-            eprintln!("lehua: net: {what} handler error: {e}");
+            eprintln!("lehua: net: {what} handler error: {}", crate::error::pretty(&e));
             return;
         }
     };
     let fut = match thread.into_async::<()>(args) {
         Ok(f) => f,
         Err(e) => {
-            eprintln!("lehua: net: {what} handler error: {e}");
+            eprintln!("lehua: net: {what} handler error: {}", crate::error::pretty(&e));
             return;
         }
     };
@@ -98,7 +98,7 @@ pub fn spawn_handler(
     tokio::task::spawn_local(async move {
         let _guard = guard;
         if let Err(e) = fut.await {
-            eprintln!("lehua: net: {what} handler error: {e}");
+            eprintln!("lehua: net: {what} handler error: {}", crate::error::pretty(&e));
         }
     });
 }

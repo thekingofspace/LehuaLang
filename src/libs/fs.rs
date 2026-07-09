@@ -146,6 +146,47 @@ pub fn build(ctx: &LibCtx) -> mlua::Result<Value> {
             })?,
         )?;
     }
+    #[cfg(feature = "lib-canvas")]
+    {
+        let scope = scope.clone();
+        t.set(
+            "readImage",
+            lua.create_function(move |_, p: String| {
+                let full = scope.resolve(&p)?;
+                let bytes = std::fs::read(&full).map_err(mlua::Error::external)?;
+                super::canvas::decode_bytes(&bytes)
+            })?,
+        )?;
+    }
+    #[cfg(feature = "lib-canvas")]
+    {
+        let scope = scope.clone();
+        t.set(
+            "writeImage",
+            lua.create_function(
+                move |_, (p, image, format, quality): (String, mlua::AnyUserData, Option<String>, Option<u8>)| {
+                    let canvas = image.borrow::<super::canvas::Canvas>().map_err(|_| {
+                        crate::error::LehuaError::msg("writeImage expects a canvas as its second argument")
+                    })?;
+                    let full = scope.resolve(&p)?;
+                    let name = match format {
+                        Some(f) => f,
+                        None => full
+                            .extension()
+                            .map(|e| e.to_string_lossy().into_owned())
+                            .unwrap_or_else(|| "png".to_string()),
+                    };
+                    let fmt = super::canvas::format_from_name(&name)?;
+                    let bytes = super::canvas::encode_image(&canvas.img.borrow(), fmt, quality)?;
+                    if let Some(parent) = full.parent() {
+                        std::fs::create_dir_all(parent).map_err(mlua::Error::external)?;
+                    }
+                    std::fs::write(&full, bytes).map_err(mlua::Error::external)?;
+                    Ok(full.to_string_lossy().into_owned())
+                },
+            )?,
+        )?;
+    }
     {
         let scope = scope.clone();
         t.set(

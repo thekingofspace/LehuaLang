@@ -118,7 +118,7 @@ fn spawn_worker(engine: Arc<Engine>, worker_id: String, worker_port: Port, args:
                 }
             };
             if let Err(e) = engine::run_entry(lua, ctx, &worker_id, Some(chan), args).await {
-                eprintln!("lehua: worker '{worker_id}' error: {e}");
+                eprintln!("lehua: worker '{worker_id}' error: {}", crate::error::pretty(&e));
             }
         }));
     });

@@ -139,6 +139,28 @@ pub fn build_bundle(
         }
 
         for (kind, literal) in scan_calls(&source) {
+            if kind == DepKind::Dll {
+                let did = dll::dll_id(&id, &literal);
+                if dlls_b64.contains_key(&did) {
+                    continue;
+                }
+                match provider.binary_path(&did) {
+                    Ok(path) => match std::fs::read(&path) {
+                        Ok(bytes) => {
+                            dlls_b64.insert(
+                                did.clone(),
+                                base64::engine::general_purpose::STANDARD.encode(&bytes),
+                            );
+                        }
+                        Err(e) => notes.push(format!("could not read DLL '{did}': {e}")),
+                    },
+                    Err(_) => notes.push(format!(
+                        "DLL '{did}' (from dll.open) not found at build time - it was not embedded; \
+                         the exe will look for it next to itself at runtime"
+                    )),
+                }
+                continue;
+            }
             let resolved = if kind == DepKind::Parallel {
                 resolver
                     .resolve_worker(&vpath::dirname(&id), &literal, &provider)
@@ -216,6 +238,7 @@ fn root_lib_toml(roots_dir: &str, id: &str) -> Option<String> {
 enum DepKind {
     Require,
     Parallel,
+    Dll,
 }
 
 impl DepKind {
@@ -223,6 +246,7 @@ impl DepKind {
         match self {
             DepKind::Require => "require",
             DepKind::Parallel => "parallel",
+            DepKind::Dll => "dll.open",
         }
     }
 }
@@ -264,6 +288,28 @@ fn scan_calls(src: &str) -> Vec<(DepKind, String)> {
                 i += 1;
             }
             let word = &src[start..i];
+            if word == "dll" && !is_member_access(b, start) {
+                let mut j = skip_ws(b, i);
+                if j < n && b[j] == b'.' {
+                    j = skip_ws(b, j + 1);
+                    let method_start = j;
+                    while j < n && is_ident_part(b[j]) {
+                        j += 1;
+                    }
+                    let method = &src[method_start..j];
+                    if method == "open" || method == "load" {
+                        let mut k = skip_ws(b, j);
+                        if k < n && b[k] == b'(' {
+                            k = skip_ws(b, k + 1);
+                        }
+                        if let Some((literal, end)) = read_string_arg(b, k) {
+                            out.push((DepKind::Dll, literal));
+                            i = end;
+                            continue;
+                        }
+                    }
+                }
+            }
             let kind = match word {
                 "require" => Some(DepKind::Require),
                 "parallel" => Some(DepKind::Parallel),
@@ -513,6 +559,17 @@ mod tests {
         assert!(deps("local s = `require('{x}')`").is_empty());
         assert!(deps("-- require('x')").is_empty());
         assert!(deps("--[[ require('x') ]]").is_empty());
+    }
+
+    #[test]
+    fn scans_dll_opens() {
+        assert_eq!(
+            deps(r#"local m = dll.open("./native/m.dll")"#),
+            vec![("dll.open", "./native/m.dll".to_string())]
+        );
+        assert_eq!(deps(r#"dll.load 'x.dll'"#), vec![("dll.open", "x.dll".to_string())]);
+        assert!(deps(r#"foo.dll.open("./m.dll")"#).is_empty());
+        assert!(deps(r#"dll.open(path)"#).is_empty());
     }
 
     #[test]

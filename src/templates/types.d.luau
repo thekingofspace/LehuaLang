@@ -42,6 +42,8 @@ export type FS = {
     write: (path: string, data: string) -> (),
     readBuffer: (path: string) -> buffer,
     writeBuffer: (path: string, data: buffer) -> (),
+    readImage: (path: string) -> Canvas,
+    writeImage: (path: string, image: Canvas, format: ImageFormat?, quality: number?) -> string,
     append: (path: string, data: string) -> (),
     copy: (source: string, destination: string) -> (),
     copyAll: (source: string, destination: string) -> (),
@@ -75,6 +77,7 @@ export type Process = {
     getenv: (name: string) -> string?,
     setenv: (name: string, value: string?) -> (),
     env: () -> { [string]: string },
+    loadEnv: (path: string?, options: { apply: boolean?, override: boolean? }?) -> { [string]: string },
     run: (program: string, args: { string }?, opts: { cwd: string? }?) -> RunResult,
     exec: (commandline: string, opts: { cwd: string? }?) -> RunResult,
     sleep: (ms: number) -> (),
@@ -667,6 +670,165 @@ export type Net = {
     sink: (options: { file: string }?) -> Sink,
 }
 
+export type Color = string | { r: number?, g: number?, b: number?, a: number? } | { number }
+export type ColorTable = { r: number, g: number, b: number, a: number }
+export type CanvasPoints = { number } | { { number } | { x: number, y: number } }
+export type GradientStop = Color | { offset: number?, color: Color } | { number | Color }
+export type GradientStops = { GradientStop }
+export type BlendMode = "normal" | "add" | "subtract" | "multiply" | "screen" | "overlay" | "darken" | "lighten" | "difference" | "exclusion"
+export type ResizeFilter = "nearest" | "linear" | "cubic" | "gaussian" | "lanczos"
+export type ImageFormat = "png" | "jpg" | "jpeg" | "gif" | "bmp" | "ico" | "tiff" | "webp" | "qoi" | "tga"
+export type MaskMode = "luminance" | "alpha"
+export type HistogramChannel = "r" | "g" | "b" | "a" | "luma"
+export type Channel = "r" | "g" | "b" | "a"
+export type NoiseKind = "perlin" | "value" | "worley" | "ridged"
+
+export type NoiseOptions = {
+    seed: number?,
+    scale: number?,
+    octaves: number?,
+    persistence: number?,
+    lacunarity: number?,
+    kind: NoiseKind?,
+}
+
+export type NoiseFillOptions = {
+    x: number?,
+    y: number?,
+    stops: GradientStops?,
+    alpha: boolean?,
+}
+
+export type NoiseMap = {
+    sample: (self: NoiseMap, x: number, y: number) -> number,
+    set: (self: NoiseMap, options: NoiseOptions) -> NoiseMap,
+    warp: (self: NoiseMap, source: NoiseMap, strength: number) -> NoiseMap,
+    unwarp: (self: NoiseMap) -> NoiseMap,
+    fill: (self: NoiseMap, target: Canvas, options: NoiseFillOptions?) -> (),
+    image: (self: NoiseMap, width: number, height: number, options: NoiseFillOptions?) -> Canvas,
+}
+
+export type CanvasFont = {
+    measure: (self: CanvasFont, text: string, size: number) -> (number, number),
+}
+
+export type Canvas = {
+    width: (self: Canvas) -> number,
+    height: (self: Canvas) -> number,
+    size: (self: Canvas) -> (number, number),
+    clone: (self: Canvas) -> Canvas,
+    getPixel: (self: Canvas, x: number, y: number) -> ColorTable,
+    setPixel: (self: Canvas, x: number, y: number, color: Color) -> Canvas,
+    pixels: (self: Canvas) -> string,
+    mapPixels: (self: Canvas, transform: (x: number, y: number, r: number, g: number, b: number, a: number) -> (number?, number?, number?, number?)) -> Canvas,
+    clear: (self: Canvas, color: Color?) -> Canvas,
+    fill: (self: Canvas, color: Color) -> Canvas,
+    floodFill: (self: Canvas, x: number, y: number, color: Color, tolerance: number?) -> Canvas,
+    line: (self: Canvas, x1: number, y1: number, x2: number, y2: number, color: Color, thickness: number?) -> Canvas,
+    dashedLine: (self: Canvas, x1: number, y1: number, x2: number, y2: number, color: Color, thickness: number?, dash: number?, gap: number?) -> Canvas,
+    polyline: (self: Canvas, points: CanvasPoints, color: Color, thickness: number?) -> Canvas,
+    rect: (self: Canvas, x: number, y: number, width: number, height: number, color: Color) -> Canvas,
+    strokeRect: (self: Canvas, x: number, y: number, width: number, height: number, color: Color, thickness: number?) -> Canvas,
+    roundedRect: (self: Canvas, x: number, y: number, width: number, height: number, radius: number, color: Color) -> Canvas,
+    strokeRoundedRect: (self: Canvas, x: number, y: number, width: number, height: number, radius: number, color: Color, thickness: number?) -> Canvas,
+    circle: (self: Canvas, cx: number, cy: number, radius: number, color: Color) -> Canvas,
+    strokeCircle: (self: Canvas, cx: number, cy: number, radius: number, color: Color, thickness: number?) -> Canvas,
+    ellipse: (self: Canvas, cx: number, cy: number, rx: number, ry: number, color: Color) -> Canvas,
+    strokeEllipse: (self: Canvas, cx: number, cy: number, rx: number, ry: number, color: Color) -> Canvas,
+    polygon: (self: Canvas, points: CanvasPoints, color: Color) -> Canvas,
+    strokePolygon: (self: Canvas, points: CanvasPoints, color: Color, thickness: number?) -> Canvas,
+    triangle: (self: Canvas, x1: number, y1: number, x2: number, y2: number, x3: number, y3: number, color: Color) -> Canvas,
+    arc: (self: Canvas, cx: number, cy: number, radius: number, startAngle: number, endAngle: number, color: Color, thickness: number?) -> Canvas,
+    pie: (self: Canvas, cx: number, cy: number, radius: number, startAngle: number, endAngle: number, color: Color) -> Canvas,
+    bezier: (self: Canvas, x1: number, y1: number, cx1: number, cy1: number, cx2: number, cy2: number, x2: number, y2: number, color: Color) -> Canvas,
+    linearGradient: (self: Canvas, x1: number, y1: number, x2: number, y2: number, stops: GradientStops) -> Canvas,
+    radialGradient: (self: Canvas, cx: number, cy: number, radius: number, stops: GradientStops) -> Canvas,
+    conicGradient: (self: Canvas, cx: number, cy: number, startAngle: number?, stops: GradientStops) -> Canvas,
+    text: (self: Canvas, text: string, x: number, y: number, size: number, color: Color, font: CanvasFont, options: { spacing: number?, lineHeight: number? }?) -> Canvas,
+    drawImage: (self: Canvas, image: Canvas, x: number, y: number, options: { opacity: number?, blend: BlendMode?, width: number?, height: number?, filter: ResizeFilter? }?) -> Canvas,
+    merge: (self: Canvas, image: Canvas, blend: BlendMode?, opacity: number?) -> Canvas,
+    tile: (self: Canvas, image: Canvas) -> Canvas,
+    mask: (self: Canvas, image: Canvas, mode: MaskMode?) -> Canvas,
+    dropShadow: (self: Canvas, dx: number, dy: number, sigma: number, color: Color?, strength: number?) -> Canvas,
+    glow: (self: Canvas, sigma: number, color: Color?, strength: number?) -> Canvas,
+    outline: (self: Canvas, color: Color, radius: number?) -> Canvas,
+    resize: (self: Canvas, width: number, height: number, filter: ResizeFilter?) -> Canvas,
+    scale: (self: Canvas, factor: number, filter: ResizeFilter?) -> Canvas,
+    thumbnail: (self: Canvas, width: number, height: number) -> Canvas,
+    crop: (self: Canvas, x: number, y: number, width: number, height: number) -> Canvas,
+    rotate90: (self: Canvas) -> Canvas,
+    rotate180: (self: Canvas) -> Canvas,
+    rotate270: (self: Canvas) -> Canvas,
+    rotate: (self: Canvas, degrees: number, background: Color?) -> Canvas,
+    flipX: (self: Canvas) -> Canvas,
+    flipY: (self: Canvas) -> Canvas,
+    shift: (self: Canvas, dx: number, dy: number) -> Canvas,
+    pad: (self: Canvas, left: number, top: number, right: number, bottom: number, color: Color?) -> Canvas,
+    trim: (self: Canvas) -> Canvas,
+    grayscale: (self: Canvas) -> Canvas,
+    invert: (self: Canvas) -> Canvas,
+    sepia: (self: Canvas) -> Canvas,
+    gamma: (self: Canvas, gamma: number) -> Canvas,
+    exposure: (self: Canvas, stops: number) -> Canvas,
+    levels: (self: Canvas, inBlack: number, inWhite: number, outBlack: number?, outWhite: number?) -> Canvas,
+    normalize: (self: Canvas) -> Canvas,
+    equalize: (self: Canvas) -> Canvas,
+    duotone: (self: Canvas, dark: Color, light: Color) -> Canvas,
+    temperature: (self: Canvas, amount: number) -> Canvas,
+    solarize: (self: Canvas, threshold: number?) -> Canvas,
+    channels: (self: Canvas, rFactor: number, gFactor: number, bFactor: number) -> Canvas,
+    colorReplace: (self: Canvas, from: Color, to: Color, tolerance: number?) -> Canvas,
+    chromaKey: (self: Canvas, color: Color, tolerance: number?, softness: number?) -> Canvas,
+    dither: (self: Canvas, levels: number?) -> Canvas,
+    scanlines: (self: Canvas, spacing: number?, opacity: number?) -> Canvas,
+    motionBlur: (self: Canvas, angle: number, distance: number) -> Canvas,
+    wave: (self: Canvas, amplitudeX: number, wavelengthX: number, amplitudeY: number?, wavelengthY: number?) -> Canvas,
+    swirl: (self: Canvas, cx: number, cy: number, radius: number, degrees: number) -> Canvas,
+    bulge: (self: Canvas, cx: number, cy: number, radius: number, amount: number) -> Canvas,
+    chromaticAberration: (self: Canvas, offset: number) -> Canvas,
+    skew: (self: Canvas, xDegrees: number, yDegrees: number, background: Color?) -> Canvas,
+    blit: (self: Canvas, source: Canvas, sx: number, sy: number, sw: number, sh: number, dx: number, dy: number) -> Canvas,
+    channel: (self: Canvas, channel: Channel) -> Canvas,
+    setChannel: (self: Canvas, channel: Channel, source: Canvas) -> Canvas,
+    splitChannels: (self: Canvas) -> (Canvas, Canvas, Canvas, Canvas),
+    getBounds: (self: Canvas) -> (number?, number?, number?, number?),
+    dominantColors: (self: Canvas, count: number?) -> { ColorTable & { count: number } },
+    brightness: (self: Canvas, delta: number) -> Canvas,
+    contrast: (self: Canvas, factor: number) -> Canvas,
+    saturate: (self: Canvas, factor: number) -> Canvas,
+    hueRotate: (self: Canvas, degrees: number) -> Canvas,
+    tint: (self: Canvas, color: Color, strength: number?) -> Canvas,
+    opacity: (self: Canvas, factor: number) -> Canvas,
+    blur: (self: Canvas, sigma: number) -> Canvas,
+    sharpen: (self: Canvas, sigma: number?, threshold: number?) -> Canvas,
+    pixelate: (self: Canvas, blockSize: number) -> Canvas,
+    posterize: (self: Canvas, levels: number) -> Canvas,
+    threshold: (self: Canvas, level: number?) -> Canvas,
+    noise: (self: Canvas, amount: number) -> Canvas,
+    vignette: (self: Canvas, strength: number?, color: Color?) -> Canvas,
+    emboss: (self: Canvas) -> Canvas,
+    edges: (self: Canvas) -> Canvas,
+    convolve: (self: Canvas, kernel: { number }, bias: number?) -> Canvas,
+    averageColor: (self: Canvas) -> ColorTable,
+    histogram: (self: Canvas, channel: HistogramChannel?) -> { number },
+    compare: (self: Canvas, other: Canvas) -> number,
+    encode: (self: Canvas, format: ImageFormat?, quality: number?) -> string,
+    dataUrl: (self: Canvas, format: ImageFormat?) -> string,
+}
+
+export type CanvasLib = {
+    new: (width: number, height: number, background: Color?) -> Canvas,
+    decode: (data: string) -> Canvas,
+    fromPixels: (width: number, height: number, rgba: string) -> Canvas,
+    font: (path: string) -> CanvasFont,
+    rgb: (r: number, g: number, b: number) -> ColorTable,
+    rgba: (r: number, g: number, b: number, a: number) -> ColorTable,
+    hsv: (h: number, s: number, v: number, a: number?) -> ColorTable,
+    hex: (hex: string) -> ColorTable,
+    noise: (options: NoiseOptions?) -> NoiseMap,
+    formats: () -> { ImageFormat },
+}
+
 export type Random = {
     NextInteger: (self: Random, min: number, max: number) -> number,
     NextNumber: ((self: Random) -> number) & ((self: Random, min: number, max: number) -> number),
@@ -679,6 +841,13 @@ export type Random = {
 
 export type RandomLib = {
     new: (seed: number?) -> Random,
+}
+
+export type ForeignLibrary = { [string]: (...any) -> ...any }
+
+export type DllLib = {
+    open: (path: string) -> ForeignLibrary,
+    load: (path: string) -> ForeignLibrary,
 }
 
 export type Task = {
@@ -722,3 +891,5 @@ declare mongo: Mongo
 declare net: Net
 declare random: RandomLib
 declare task: TaskLib
+declare canvas: CanvasLib
+declare dll: DllLib

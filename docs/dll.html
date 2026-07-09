@@ -30,11 +30,40 @@
     <article class="doc-page">
       <p class="eyebrow">Guides</p>
       <h1>Native DLLs</h1>
-      <p>You can call native code with an inject header. It loads a DLL and binds it as a global for that one file only. The DLL is found next to the script that injects it.</p>
+      <p>Lehua calls native code through small DLLs (shared objects on Linux and macOS). There are two ways to reach one: an <strong>inject header</strong> that binds a DLL as a global for a single file, or the <strong>dll library</strong> that opens a DLL as a value you can pass around and re-export. Both load the same kind of DLL and both get packed into your executable when you build.</p>
+
+      <h2>The inject header</h2>
+      <p>An inject header loads a DLL and binds it as a global for that one file only. The DLL is found next to the script that injects it.</p>
       <div class="codeblock"><div class="window-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="window-title">src/main.luau</span></div><pre><code class="language-luau">--#inject[mathext.dll]
 
 print(mathext.double_it(21)) -- 42</code></pre></div>
-      <p>Calls into a DLL run on a background thread, so a slow call blocks only the coroutine that made it. When you build the program, the DLLs you reference get packed into the executable. A DLL that is missing at build time is a warning, not an error, and the built program will look for it next to itself at run time. On Linux the same header loads a shared object, for example <code>--#inject[libmathext.so]</code>.</p>
+      <p>The global is scoped to the file that injects it, so a module that injects a DLL keeps that global to itself. That is usually what you want: the module wraps the native calls and returns a normal table, and the rest of your program uses that table without ever seeing the DLL. Because the returned functions close over the injected global, calling <code>module.something()</code> from a file that never injected the DLL works fine.</p>
+      <div class="codeblock"><div class="window-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="window-title">src/mathwrap.luau</span></div><pre><code class="language-luau">--#inject[mathext.dll]
+
+-- mathext is visible here, in this module only.
+return {
+    double = function(n) return mathext.double_it(n) end,
+}</code></pre></div>
+      <div class="codeblock"><div class="window-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="window-title">src/main.luau</span></div><pre><code class="language-luau">local math = require("./mathwrap")
+print(math.double(21)) -- 42, no inject header needed here</code></pre></div>
+
+      <h2>The dll library</h2>
+      <p>The <code>dll</code> library does the same thing at run time, as a value instead of a header. Include it, then open a DLL by a path relative to the current file. You get back a table whose fields are the DLL's exports, ready to call.</p>
+      <div class="codeblock"><div class="window-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="window-title">src/main.luau</span></div><pre><code class="language-luau">--#include[dll]
+
+local mathext = dll.open("./native/mathext.dll")
+print(mathext.double_it(21)) -- 42</code></pre></div>
+      <table>
+      <thead><tr><th>Function</th><th>Returns</th><th>Description</th></tr></thead>
+      <tbody>
+      <tr><td><code>dll.open(path)</code></td><td><code>table</code></td><td>Opens a DLL, resolved next to the current file, and returns its exports as a table. <code>dll.load</code> is the same function.</td></tr>
+      </tbody>
+      </table>
+      <p>This is the tidy way to keep native code behind a normal Luau module: a module opens the DLL and returns a wrapper table, and every other file just requires that module. The library resolves paths the same way the inject header does, relative to the file that calls <code>dll.open</code>, so the DLL is embedded into your executable at build time just like an injected one.</p>
+
+      <h2>How calls run</h2>
+      <p>Calls into a DLL run on a background thread, so a slow call blocks only the coroutine that made it. When you build the program, the DLLs you reference (through either an inject header or <code>dll.open</code>) get packed into the executable. A DLL that is missing at build time is a warning, not an error, and the built program will look for it next to itself at run time. On Linux the same mechanisms load a shared object, for example <code>--#inject[libmathext.so]</code> or <code>dll.open("./libmathext.so")</code>.</p>
+
       <h3>The DLL interface</h3>
       <p>A Lehua ready DLL exports one C function per call, plus a <code>lehua_free</code> function. Each call takes JSON bytes for the arguments and returns JSON bytes for the result.</p>
       <div class="codeblock"><div class="window-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="window-title">plugin.c</span></div><pre><code class="language-bash">// input:  a JSON array of the call arguments, for example [21]

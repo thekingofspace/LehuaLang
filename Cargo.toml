@@ -1,6 +1,6 @@
 [package]
 name = "lehua"
-version = "0.2.1"
+version = "0.2.5"
 edition = "2021"
 rust-version = "1.80"
 description = "Lehua - the next-generation Luau runtime: compiled, multithreaded, batteries-included."
@@ -29,6 +29,7 @@ full = [
     "lib-net",
     "lib-random",
     "lib-task",
+    "lib-canvas",
 ]
 lib-fs = ["dep:glob", "dep:getrandom"]
 lib-process = ["dep:sysinfo"]
@@ -56,6 +57,7 @@ lib-sqlite = ["dep:rusqlite", "lib-datetime"]
 lib-mongo = ["dep:mongodb", "dep:futures-util", "dep:rustls", "lib-datetime"]
 lib-random = ["dep:getrandom"]
 lib-task = []
+lib-canvas = ["dep:image", "dep:imageproc", "dep:ab_glyph", "dep:getrandom"]
 lib-net = [
     "dep:reqwest",
     "dep:tokio-tungstenite",
@@ -105,6 +107,9 @@ hickory-resolver = { version = "0.26", optional = true }
 interprocess = { version = "2", features = ["tokio"], optional = true }
 suppaftp = { version = "10", optional = true }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std"], optional = true }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "bmp", "ico", "tiff", "webp", "qoi", "tga"], optional = true }
+imageproc = { version = "0.25", default-features = false, optional = true }
+ab_glyph = { version = "0.2", optional = true }
 bytes = { version = "1", optional = true }
 libloading = "0.9"
 flate2 = "1.1"

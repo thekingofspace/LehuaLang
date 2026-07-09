@@ -64,8 +64,18 @@
 <tr><td><code>process.getenv(name)</code></td><td><code>string?</code></td><td>The value, or nil if it is not set.</td></tr>
 <tr><td><code>process.setenv(name, value?)</code></td><td><code>nil</code></td><td>Sets the value. Pass nil to remove it.</td></tr>
 <tr><td><code>process.env()</code></td><td><code>{ [string]: string }</code></td><td>A table of every environment variable.</td></tr>
+<tr><td><code>process.loadEnv(path?, options?)</code></td><td><code>{ [string]: string }</code></td><td>Loads a <code>.env</code> file and returns its variables. See below.</td></tr>
 </tbody>
 </table>
+
+<h3>.env files</h3>
+<p><code>process.loadEnv()</code> reads <code>.env</code> next to the running script (or any path you pass) and applies each entry to the process environment, so <code>process.getenv</code> and child processes see them. The format is the usual one: <code>KEY=value</code> lines, <code>#</code> comments, an optional <code>export&nbsp;</code> prefix, double quotes with <code>
+</code> escapes, single quotes taken literally, and trailing <code>&nbsp;#&nbsp;comments</code> stripped from unquoted values.</p>
+<p>By default variables that already exist in the environment are left alone, which is what you want so real deployment settings beat the local file. Options: <code>{ override = true }</code> makes the file win anyway; <code>{ apply = false }</code> just parses and returns the table without touching the environment.</p>
+<div class="codeblock"><div class="window-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="window-title">src/main.luau</span></div><pre><code class="language-luau">--#include[process]
+
+process.loadEnv()
+local token = process.getenv("API_TOKEN")</code></pre></div>
 
 <h2>Running programs</h2>
 <p><code>process.run</code> starts a program directly, with no shell. You pass the program and a list of arguments. <code>process.exec</code> runs a command line through the system shell, so pipes and other shell features work. Both wait for the program to finish and return a RunResult.</p>

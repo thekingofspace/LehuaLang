@@ -1,5 +1,5 @@
 use std::cell::{Cell, RefCell};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -44,7 +44,8 @@ impl Engine {
 pub struct VmContext {
     pub engine: Arc<Engine>,
     pub cache: RefCell<HashMap<String, Value>>,
-    pub loading: RefCell<HashSet<String>>,
+    pub loading: RefCell<HashMap<String, (usize, Rc<tokio::sync::Notify>)>>,
+    pub waiting: RefCell<HashMap<usize, String>>,
     pub dlls: Rc<RefCell<HashMap<String, Arc<libloading::Library>>>>,
     pub sched: Rc<VmScheduler>,
 }
@@ -54,7 +55,8 @@ impl VmContext {
         Rc::new(VmContext {
             engine,
             cache: RefCell::new(HashMap::new()),
-            loading: RefCell::new(HashSet::new()),
+            loading: RefCell::new(HashMap::new()),
+            waiting: RefCell::new(HashMap::new()),
             dlls: Rc::new(RefCell::new(HashMap::new())),
             sched: Rc::new(VmScheduler::default()),
         })
@@ -115,7 +117,7 @@ impl VmScheduler {
         let code = self.exit_code.get();
         for f in handlers {
             if let Err(e) = f.call::<()>(code) {
-                eprintln!("lehua: close handler error: {e}");
+                eprintln!("lehua: close handler error: {}", crate::error::pretty(&e));
             }
         }
     }
@@ -347,7 +349,7 @@ async fn heartbeat_loop(ctx: &Rc<VmContext>) {
         }
         for f in funcs {
             if let Err(e) = f.call_async::<()>(dt).await {
-                eprintln!("lehua: heartbeat error: {e}");
+                eprintln!("lehua: heartbeat error: {}", crate::error::pretty(&e));
             }
         }
     }
@@ -372,7 +374,7 @@ async fn require_impl(
 
 fn builtin_value(lua: &Lua, ctx: &Rc<VmContext>, from_id: &str, name: &str) -> mlua::Result<Value> {
     let from_dir = ctx.engine.real_dir_of(from_id);
-    let key = format!("@builtin:{name}:{}", from_dir.display());
+    let key = format!("@builtin:{name}:{}", vpath::dirname(from_id));
     if let Some(v) = ctx.cache.borrow().get(&key) {
         return Ok(v.clone());
     }
@@ -381,10 +383,55 @@ fn builtin_value(lua: &Lua, ctx: &Rc<VmContext>, from_id: &str, name: &str) -> m
         engine: &ctx.engine,
         real_dir: from_dir,
         sched: ctx.sched.clone(),
+        from_id: from_id.to_string(),
+        dlls: ctx.dlls.clone(),
     };
     let value = libs::build(name, &lib_ctx)?;
     ctx.cache.borrow_mut().insert(key, value.clone());
     Ok(value)
+}
+
+struct LoadingGuard {
+    ctx: Rc<VmContext>,
+    id: String,
+    notify: Rc<tokio::sync::Notify>,
+}
+
+impl Drop for LoadingGuard {
+    fn drop(&mut self) {
+        self.ctx.loading.borrow_mut().remove(&self.id);
+        self.notify.notify_waiters();
+    }
+}
+
+struct WaitingGuard {
+    ctx: Rc<VmContext>,
+    thread: usize,
+}
+
+impl Drop for WaitingGuard {
+    fn drop(&mut self) {
+        self.ctx.waiting.borrow_mut().remove(&self.thread);
+    }
+}
+
+fn detect_require_cycle(ctx: &Rc<VmContext>, id: &str, me: usize) -> bool {
+    let loading = ctx.loading.borrow();
+    let waiting = ctx.waiting.borrow();
+    let mut cur = id.to_string();
+    for _ in 0..1024 {
+        let Some((loader, _)) = loading.get(&cur) else {
+            return false;
+        };
+        if *loader == me {
+            return true;
+        }
+        match waiting.get(loader) {
+            Some(next) => cur = next.clone(),
+            None => return false,
+        }
+    }
+    true
 }
 
 async fn load_module(
@@ -393,16 +440,42 @@ async fn load_module(
     id: &str,
     extra_varargs: Vec<Value>,
 ) -> mlua::Result<Value> {
-    if let Some(v) = ctx.cache.borrow().get(id) {
-        return Ok(v.clone());
+    let me = lua.current_thread().to_pointer() as usize;
+    loop {
+        if let Some(v) = ctx.cache.borrow().get(id) {
+            return Ok(v.clone());
+        }
+        let pending = ctx.loading.borrow().get(id).cloned();
+        match pending {
+            Some((_, notify)) => {
+                if detect_require_cycle(ctx, id, me) {
+                    return Err(LehuaError::CircularRequire(id.to_string()).into());
+                }
+                ctx.waiting.borrow_mut().insert(me, id.to_string());
+                let waiting_guard = WaitingGuard {
+                    ctx: ctx.clone(),
+                    thread: me,
+                };
+                notify.notified().await;
+                drop(waiting_guard);
+            }
+            None => break,
+        }
     }
-    if !ctx.loading.borrow_mut().insert(id.to_string()) {
-        return Err(LehuaError::CircularRequire(id.to_string()).into());
-    }
+
+    let notify = Rc::new(tokio::sync::Notify::new());
+    ctx.loading
+        .borrow_mut()
+        .insert(id.to_string(), (me, notify.clone()));
+    let guard = LoadingGuard {
+        ctx: ctx.clone(),
+        id: id.to_string(),
+        notify,
+    };
 
     let result = execute_module(lua, ctx, id, extra_varargs).await;
 
-    ctx.loading.borrow_mut().remove(id);
+    drop(guard);
     let value = result?;
     ctx.cache.borrow_mut().insert(id.to_string(), value.clone());
     Ok(value)
@@ -475,7 +548,7 @@ fn compile_module(
     }
     let source = strip_shebang(source);
     let wrapped = format!("return function({params}, ...) {source}\nend");
-    lua.load(&wrapped).set_name(id).eval::<Function>()
+    lua.load(&wrapped).set_name(format!("@{id}")).eval::<Function>()
 }
 
 fn strip_shebang(source: &str) -> std::borrow::Cow<'_, str> {

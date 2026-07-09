@@ -1,9 +1,12 @@
 #[cfg(feature = "lib-archive")]
 pub mod archive;
+#[cfg(feature = "lib-canvas")]
+pub mod canvas;
 #[cfg(feature = "lib-cryptography")]
 pub mod cryptography;
 #[cfg(feature = "lib-datetime")]
 pub mod datetime;
+pub mod foreign;
 #[cfg(feature = "lib-fs")]
 pub mod fs;
 #[cfg(feature = "lib-luau")]
@@ -48,6 +51,8 @@ pub struct LibCtx<'a> {
     pub engine: &'a Arc<Engine>,
     pub real_dir: PathBuf,
     pub sched: Rc<VmScheduler>,
+    pub from_id: String,
+    pub dlls: Rc<std::cell::RefCell<std::collections::HashMap<String, std::sync::Arc<libloading::Library>>>>,
 }
 
 pub const KNOWN: &[&str] = &[
@@ -83,6 +88,9 @@ pub const KNOWN: &[&str] = &[
     "random",
     #[cfg(feature = "lib-task")]
     "task",
+    #[cfg(feature = "lib-canvas")]
+    "canvas",
+    "dll",
 ];
 
 pub fn build(name: &str, ctx: &LibCtx) -> mlua::Result<Value> {
@@ -120,6 +128,9 @@ pub fn build(name: &str, ctx: &LibCtx) -> mlua::Result<Value> {
         "random" => self::random::build(ctx),
         #[cfg(feature = "lib-task")]
         "task" => self::task::build(ctx),
+        #[cfg(feature = "lib-canvas")]
+        "canvas" => self::canvas::build(ctx),
+        "dll" => self::foreign::build(ctx),
         other => Err(LehuaError::msg(format!(
             "built-in library '{other}' is not part of this runtime build"
         ))

@@ -38,7 +38,7 @@ impl TaskState {
             if self.cancelled.get() {
                 return false;
             }
-            let dur = Duration::from_secs_f64(self.time.get().max(0.0));
+            let dur = to_duration(self.time.get());
             tokio::select! {
                 _ = self.wake.notified() => {
                     if self.cancelled.get() {
@@ -65,6 +65,41 @@ impl TaskState {
 }
 
 type Registry = Rc<RefCell<std::collections::HashMap<usize, Rc<TaskState>>>>;
+
+const MAX_TASK_SECONDS: f64 = 60.0 * 60.0 * 24.0 * 365.0 * 100.0;
+
+fn to_duration(seconds: f64) -> Duration {
+    if !seconds.is_finite() || seconds <= 0.0 {
+        return Duration::ZERO;
+    }
+    Duration::from_secs_f64(seconds.min(MAX_TASK_SECONDS))
+}
+
+fn register_thread(registry: &Registry, thread: &Thread, state: &Rc<TaskState>) {
+    registry
+        .borrow_mut()
+        .insert(thread.to_pointer() as usize, state.clone());
+}
+
+fn unregister_thread(registry: &Registry, key: usize, state: &Rc<TaskState>) {
+    let mut reg = registry.borrow_mut();
+    if reg.get(&key).map(|s| Rc::ptr_eq(s, state)).unwrap_or(false) {
+        reg.remove(&key);
+    }
+}
+
+fn reschedule_state(state: &Rc<TaskState>, seconds: f64) -> mlua::Result<()> {
+    if state.kind != "delay" && state.kind != "schedule" {
+        return Err(LehuaError::msg(format!(
+            "a {} task has no timer to change",
+            state.kind
+        ))
+        .into());
+    }
+    state.time.set(seconds);
+    state.wake.notify_waiters();
+    Ok(())
+}
 
 pub struct TaskHandle {
     state: Rc<TaskState>,
@@ -137,7 +172,7 @@ async fn drive(
     }
     *state.thread.borrow_mut() = Some(thread.clone());
     let key = thread.to_pointer() as usize;
-    registry.borrow_mut().insert(key, state.clone());
+    register_thread(&registry, &thread, &state);
     match thread.into_async::<()>(args) {
         Ok(fut) => {
             tokio::select! {
@@ -145,7 +180,7 @@ async fn drive(
                 r = fut => {
                     if let Err(e) = r {
                         if !state.cancelled.get() {
-                            eprintln!("lehua: task error: {e}");
+                            eprintln!("lehua: task error: {}", crate::error::pretty(&e));
                         }
                     }
                 }
@@ -153,7 +188,7 @@ async fn drive(
         }
         Err(e) => eprintln!("lehua: task error: {e}"),
     }
-    registry.borrow_mut().remove(&key);
+    unregister_thread(&registry, key, &state);
     let _ = lua;
 }
 
@@ -174,6 +209,7 @@ fn spawn_one(
     deferred: bool,
 ) -> mlua::Result<()> {
     let thread = make_thread(lua, &runnable)?;
+    register_thread(registry, &thread, &state);
     let lua = lua.clone();
     let registry = registry.clone();
     let guard = Guard::new(sched);
@@ -196,6 +232,10 @@ fn spawn_delayed(
     runnable: Runnable,
     args: MultiValue,
 ) {
+    if let Runnable::Coroutine(t) = &runnable {
+        *state.thread.borrow_mut() = Some(t.clone());
+        register_thread(registry, t, &state);
+    }
     let lua = lua.clone();
     let registry = registry.clone();
     let guard = Guard::new(sched);
@@ -203,9 +243,12 @@ fn spawn_delayed(
         let _guard = guard;
         if state.sleep().await {
             match make_thread(&lua, &runnable) {
-                Ok(thread) => drive(lua, state.clone(), registry, thread, args).await,
+                Ok(thread) => drive(lua, state.clone(), registry.clone(), thread, args).await,
                 Err(e) => eprintln!("lehua: task error: {e}"),
             }
+        }
+        if let Runnable::Coroutine(t) = &runnable {
+            unregister_thread(&registry, t.to_pointer() as usize, &state);
         }
         state.finished.set(true);
     });
@@ -219,6 +262,10 @@ fn spawn_scheduled(
     runnable: Runnable,
     args: MultiValue,
 ) {
+    if let Runnable::Coroutine(t) = &runnable {
+        *state.thread.borrow_mut() = Some(t.clone());
+        register_thread(registry, t, &state);
+    }
     let lua = lua.clone();
     let sched = sched.clone();
     let registry = registry.clone();
@@ -262,6 +309,9 @@ fn spawn_scheduled(
                 }
             }
         }
+        if let Runnable::Coroutine(t) = &runnable {
+            unregister_thread(&registry, t.to_pointer() as usize, &state);
+        }
         state.finished.set(true);
     });
 }
@@ -280,9 +330,7 @@ impl UserData for TaskHandle {
         });
 
         m.add_method("Reschedule", |_, this, seconds: f64| {
-            this.state.time.set(seconds);
-            this.state.wake.notify_waiters();
-            Ok(())
+            reschedule_state(&this.state, seconds)
         });
 
         m.add_method("IsCancelled", |_, this, ()| Ok(this.state.cancelled.get()));
@@ -304,8 +352,7 @@ pub fn build(ctx: &LibCtx) -> mlua::Result<Value> {
         "wait",
         lua.create_async_function(|_, seconds: Option<f64>| async move {
             let start = Instant::now();
-            let dur = Duration::from_secs_f64(seconds.unwrap_or(0.0).max(0.0));
-            tokio::time::sleep(dur).await;
+            tokio::time::sleep(to_duration(seconds.unwrap_or(0.0))).await;
             Ok(start.elapsed().as_secs_f64())
         })?,
     )?;
@@ -395,16 +442,7 @@ pub fn build(ctx: &LibCtx) -> mlua::Result<Value> {
         lua.create_function(|_, (task, seconds): (Value, f64)| {
             let state = handle_from(&task)
                 .ok_or_else(|| LehuaError::msg("task.reschedule expects a task object"))?;
-            if state.kind != "delay" && state.kind != "schedule" {
-                return Err(LehuaError::msg(format!(
-                    "task.reschedule: a {} task has no timer to change",
-                    state.kind
-                ))
-                .into());
-            }
-            state.time.set(seconds);
-            state.wake.notify_waiters();
-            Ok(())
+            reschedule_state(&state, seconds)
         })?,
     )?;
 

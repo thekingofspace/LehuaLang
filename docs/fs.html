@@ -107,6 +107,8 @@ end</code></pre></div>
 <tr><td><code>fs.write(path, data)</code></td><td><code>nil</code></td><td>Writes data to the file, replacing what was there.</td></tr>
 <tr><td><code>fs.readBuffer(path)</code></td><td><code>buffer</code></td><td>The whole file as a Luau buffer.</td></tr>
 <tr><td><code>fs.writeBuffer(path, data)</code></td><td><code>nil</code></td><td>Writes a Luau buffer to the file, replacing what was there.</td></tr>
+<tr><td><code>fs.readImage(path)</code></td><td><code>Canvas</code></td><td>Decodes an image file into a <a href="canvas.html">canvas</a>. Needs the canvas library.</td></tr>
+<tr><td><code>fs.writeImage(path, canvas, format?, quality?)</code></td><td><code>string</code></td><td>Encodes a canvas to a file; the format defaults to the extension. Returns the path.</td></tr>
 <tr><td><code>fs.append(path, data)</code></td><td><code>nil</code></td><td>Adds data to the end of the file, making the file if needed.</td></tr>
 <tr><td><code>fs.readDir(path)</code></td><td><code>{ string }</code></td><td>An array of the names inside a folder.</td></tr>
 </tbody>

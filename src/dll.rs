@@ -28,9 +28,15 @@ pub fn make_dll_global(
     entry: &str,
 ) -> mlua::Result<Value> {
     let id = dll_id(module_id, entry);
-    let provider = ctx.engine.provider.clone();
-    let cache = ctx.dlls.clone();
+    open_table(lua, ctx.engine.provider.clone(), ctx.dlls.clone(), id)
+}
 
+pub fn open_table(
+    lua: &Lua,
+    provider: Arc<dyn ModuleProvider>,
+    cache: DllCache,
+    id: String,
+) -> mlua::Result<Value> {
     let tbl = lua.create_table()?;
     let meta = lua.create_table()?;
     let index_fn = lua.create_function(move |lua, (t, name): (Table, String)| {

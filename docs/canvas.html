@@ -1,0 +1,314 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The canvas library · Lehua</title>
+<meta name="description" content="The canvas library. Lehua is a standalone Luau runtime that compiles to a single executable.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='6' fill='%23d94a3d'/%3E%3Cg fill='%23e5675b'%3E%3Cellipse cx='16' cy='6' rx='3.4' ry='5'/%3E%3Cellipse cx='16' cy='26' rx='3.4' ry='5'/%3E%3Cellipse cx='6' cy='16' rx='5' ry='3.4'/%3E%3Cellipse cx='26' cy='16' rx='5' ry='3.4'/%3E%3C/g%3E%3Ccircle cx='16' cy='16' r='3' fill='%23ffd24d'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="assets/styles.css">
+<script>(function(){try{var t=localStorage.getItem('lehua-theme');if(!t)t=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light';document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="navbar">
+  <button id="menu-btn" class="icon-btn" aria-label="Open menu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16" stroke-linecap="round"/></svg></button>
+  <a class="brand" href="index.html"><svg viewBox="0 0 32 32"><circle cx="16" cy="16" r="6" fill="#d94a3d"/><g fill="#e5675b"><ellipse cx="16" cy="6" rx="3.4" ry="5"/><ellipse cx="16" cy="26" rx="3.4" ry="5"/><ellipse cx="6" cy="16" rx="5" ry="3.4"/><ellipse cx="26" cy="16" rx="5" ry="3.4"/></g><circle cx="16" cy="16" r="3" fill="#ffd24d"/></svg> Lehua</a>
+  <div class="nav-spacer"></div>
+  <nav class="nav-links">
+    <a class="docs" href="introduction.html">Docs</a>
+    <a class="gh" href="https://github.com/thekingofspace/LehuaLang"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.58 2 12.25c0 4.53 2.87 8.37 6.84 9.73.5.1.68-.22.68-.49v-1.7c-2.78.62-3.37-1.22-3.37-1.22-.45-1.18-1.11-1.5-1.11-1.5-.91-.64.07-.62.07-.62 1 .07 1.53 1.06 1.53 1.06.9 1.58 2.36 1.12 2.94.86.09-.67.35-1.12.63-1.38-2.22-.26-4.56-1.14-4.56-5.07 0-1.12.39-2.03 1.03-2.75-.1-.26-.45-1.3.1-2.71 0 0 .84-.28 2.75 1.05a9.3 9.3 0 015 0c1.91-1.33 2.75-1.05 2.75-1.05.55 1.41.2 2.45.1 2.71.64.72 1.03 1.63 1.03 2.75 0 3.94-2.34 4.81-4.57 5.06.36.32.68.94.68 1.9v2.82c0 .27.18.6.69.49A10.02 10.02 0 0022 12.25C22 6.58 17.52 2 12 2z"/></svg> GitHub</a>
+  </nav>
+  <button id="theme-btn" class="icon-btn" aria-label="Toggle theme"><svg id="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z" stroke-linejoin="round"/></svg><svg id="icon-sun" style="display:none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.4 1.4M17.6 17.6L19 19M19 5l-1.4 1.4M6.4 17.6L5 19" stroke-linecap="round"/></svg></button>
+</header>
+<div class="backdrop" id="backdrop"></div>
+<div class="layout">
+  <aside class="sidebar" id="sidebar">
+    <label class="side-search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3" stroke-linecap="round"/></svg><input id="side-search" type="text" placeholder="Search docs" aria-label="Search the docs"><kbd>Ctrl K</kbd></label>
+    <nav id="side-nav" class="side-nav"></nav>
+  </aside>
+  <main class="content">
+    <article class="doc-page">
+<p class="eyebrow">Library Reference</p>
+<h1>The canvas library</h1>
+<p class="lead">The <code>canvas</code> library creates and edits images in memory. A canvas is an RGBA bitmap you draw shapes, gradients, text, and other images onto, run filters over, and encode to PNG, JPG, and friends. Together with <code>fs.readImage</code> and <code>fs.writeImage</code> it covers the whole pipeline from a blank bitmap to a finished file.</p>
+
+<h2>Including canvas</h2>
+<div class="codeblock"><pre><code class="language-luau">--#include[canvas]</code></pre></div>
+
+<h2>Creating canvases</h2>
+<table>
+<thead><tr><th>Function</th><th>Returns</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>canvas.new(width, height, background?)</code></td><td><code>Canvas</code></td><td>A new canvas up to 16384x16384. The background defaults to transparent.</td></tr>
+<tr><td><code>canvas.decode(bytes)</code></td><td><code>Canvas</code></td><td>Decodes encoded image bytes (from a file, an HTTP body, anywhere).</td></tr>
+<tr><td><code>canvas.fromPixels(width, height, rgba)</code></td><td><code>Canvas</code></td><td>Builds a canvas from raw RGBA bytes, 4 per pixel.</td></tr>
+<tr><td><code>canvas.font(path)</code></td><td><code>Font</code></td><td>Loads a TTF or OTF font for <code>text</code>, e.g. <code>"C:/Windows/Fonts/arial.ttf"</code>. <code>font:measure(text, size)</code> returns the pixel width and height.</td></tr>
+<tr><td><code>canvas.formats()</code></td><td><code>{ string }</code></td><td>The encodable formats: png, jpg, gif, bmp, ico, tiff, webp, qoi, tga.</td></tr>
+</tbody>
+</table>
+
+<h2>Colors</h2>
+<p>Every <code>color</code> argument accepts three shapes, and channel values run 0 to 255:</p>
+<table>
+<thead><tr><th>Form</th><th>Example</th></tr></thead>
+<tbody>
+<tr><td>Hex string, 3, 4, 6, or 8 digits</td><td><code>"#f80"</code>, <code>"#ff8800"</code>, <code>"#ff880080"</code> (last two digits are alpha)</td></tr>
+<tr><td>Named color</td><td><code>"red"</code>, <code>"navy"</code>, <code>"orange"</code>, <code>"transparent"</code>, and the other common CSS names</td></tr>
+<tr><td>Table</td><td><code>{ r = 255, g = 136, b = 0, a = 128 }</code> or positional <code>{ 255, 136, 0 }</code></td></tr>
+</tbody>
+</table>
+<p>The helpers <code>canvas.rgb(r, g, b)</code>, <code>canvas.rgba(r, g, b, a)</code>, <code>canvas.hsv(h, s, v, a?)</code> (hue 0-360, s and v 0-1), and <code>canvas.hex(str)</code> build color tables for you. A color with alpha below 255 blends with what is already on the canvas, so translucent panels and overlays work the way you expect.</p>
+
+<h2>Reading and writing pixels</h2>
+<table>
+<thead><tr><th>Method</th><th>Returns</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>c:width()</code> / <code>c:height()</code> / <code>c:size()</code></td><td><code>number</code></td><td>Dimensions in pixels.</td></tr>
+<tr><td><code>c:clone()</code></td><td><code>Canvas</code></td><td>An independent copy.</td></tr>
+<tr><td><code>c:getPixel(x, y)</code></td><td><code>{r, g, b, a}</code></td><td>One pixel. Coordinates start at 0 in the top left.</td></tr>
+<tr><td><code>c:setPixel(x, y, color)</code></td><td><code>Canvas</code></td><td>Writes one pixel. Out of bounds writes are ignored.</td></tr>
+<tr><td><code>c:pixels()</code></td><td><code>string</code></td><td>The raw RGBA bytes.</td></tr>
+<tr><td><code>c:mapPixels(fn)</code></td><td><code>Canvas</code></td><td>Calls <code>fn(x, y, r, g, b, a)</code> for every pixel; returned values replace the channels.</td></tr>
+<tr><td><code>c:clear(color?)</code></td><td><code>Canvas</code></td><td>Resets every pixel, transparent by default. <code>c:fill(color)</code> is the same with a required color.</td></tr>
+<tr><td><code>c:floodFill(x, y, color, tolerance?)</code></td><td><code>Canvas</code></td><td>Paint bucket from a point, spreading over pixels within <code>tolerance</code> of the start color.</td></tr>
+</tbody>
+</table>
+<p>Every drawing and editing method returns the canvas itself, so calls chain: <code>canvas.new(64, 64):fill("navy"):circle(32, 32, 20, "gold"):blur(2)</code>.</p>
+
+<h2>Shapes</h2>
+<p>Coordinates are pixels; angles are degrees. Where <code>thickness</code> appears it defaults to 1 and thick strokes get round caps.</p>
+<table>
+<thead><tr><th>Method</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>c:line(x1, y1, x2, y2, color, thickness?)</code></td><td>A straight line.</td></tr>
+<tr><td><code>c:dashedLine(x1, y1, x2, y2, color, thickness?, dash?, gap?)</code></td><td>A dashed line. The dash length defaults to 6, and the gap defaults to the dash length.</td></tr>
+<tr><td><code>c:polyline(points, color, thickness?)</code></td><td>Connected line segments.</td></tr>
+<tr><td><code>c:rect(x, y, w, h, color)</code></td><td>A filled rectangle. <code>strokeRect</code> draws just the border.</td></tr>
+<tr><td><code>c:roundedRect(x, y, w, h, radius, color)</code></td><td>A filled rectangle with rounded corners. <code>strokeRoundedRect(..., thickness?)</code> for the border.</td></tr>
+<tr><td><code>c:circle(cx, cy, r, color)</code></td><td>A filled circle. <code>strokeCircle(..., thickness?)</code> for the ring.</td></tr>
+<tr><td><code>c:ellipse(cx, cy, rx, ry, color)</code></td><td>A filled ellipse. <code>strokeEllipse</code> for the outline.</td></tr>
+<tr><td><code>c:polygon(points, color)</code></td><td>A filled polygon. <code>strokePolygon(..., thickness?)</code> for the outline.</td></tr>
+<tr><td><code>c:triangle(x1, y1, x2, y2, x3, y3, color)</code></td><td>A filled triangle.</td></tr>
+<tr><td><code>c:arc(cx, cy, r, startAngle, endAngle, color, thickness?)</code></td><td>A circular arc stroke.</td></tr>
+<tr><td><code>c:pie(cx, cy, r, startAngle, endAngle, color)</code></td><td>A filled wedge.</td></tr>
+<tr><td><code>c:bezier(x1, y1, cx1, cy1, cx2, cy2, x2, y2, color)</code></td><td>A cubic bezier curve.</td></tr>
+</tbody>
+</table>
+<p><code>points</code> is either a flat list <code>{ x1, y1, x2, y2, ... }</code> or a list of <code>{ x, y }</code> tables.</p>
+
+<h2>Gradients</h2>
+<p>Gradients repaint the whole canvas. To fill a region, paint a small canvas and <code>drawImage</code> it where you want it. Stops are a list of colors spread evenly, or entries with explicit positions: <code>{ {0, "red"}, {0.8, "blue"}, {offset = 1, color = "white"} }</code>.</p>
+<table>
+<thead><tr><th>Method</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>c:linearGradient(x1, y1, x2, y2, stops)</code></td><td>Blends along the line from one point to the other.</td></tr>
+<tr><td><code>c:radialGradient(cx, cy, radius, stops)</code></td><td>Blends outward from a center.</td></tr>
+<tr><td><code>c:conicGradient(cx, cy, startAngle?, stops)</code></td><td>Blends around a center, like a color wheel.</td></tr>
+</tbody>
+</table>
+
+<h2>Text</h2>
+<p><code>c:text(text, x, y, size, color, font, options?)</code> draws text with a font from <code>canvas.font</code>. Newlines start new lines. Options: <code>spacing</code> adds extra pixels between letters (the classic spaced heading look), <code>lineHeight</code> overrides the default of 1.2 times the size.</p>
+<div class="codeblock"><div class="window-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="window-title">src/main.luau</span></div><pre><code class="language-luau">--#include[canvas, fs]
+
+local font = canvas.font("C:/Windows/Fonts/arial.ttf")
+local card = canvas.new(400, 120, "#0a0e1e")
+card:text("VIRETH CULTIVATION", 20, 30, 28, "#9be352", font, { spacing = 4 })
+card:dashedLine(20, 80, 380, 80, "#334466", 1, 4, 4)
+fs.writeImage("@self/title.png", card)</code></pre></div>
+
+<h2>Layers and merging</h2>
+<p>Any canvas can be drawn onto any other, which is how you build images in layers: compose each piece on its own transparent canvas, then stack them.</p>
+<table>
+<thead><tr><th>Method</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>c:drawImage(other, x, y, options?)</code></td><td>Draws another canvas at a position with alpha blending. Options: <code>opacity</code> 0-1, <code>blend</code> mode, <code>width</code>/<code>height</code> to scale it on the way in, <code>filter</code> for the scaling quality.</td></tr>
+<tr><td><code>c:merge(other, blend?, opacity?)</code></td><td>Blends another canvas over this one at the origin, like a layer merge in an image editor.</td></tr>
+<tr><td><code>c:tile(other)</code></td><td>Repeats another canvas across this one as a pattern.</td></tr>
+<tr><td><code>c:mask(other, mode?)</code></td><td>Uses another canvas as an alpha mask: bright (or opaque, with mode <code>"alpha"</code>) areas keep pixels, dark areas erase them.</td></tr>
+</tbody>
+</table>
+<p>The blend modes are <code>"normal"</code>, <code>"add"</code>, <code>"subtract"</code>, <code>"multiply"</code>, <code>"screen"</code>, <code>"overlay"</code>, <code>"darken"</code>, <code>"lighten"</code>, <code>"difference"</code>, and <code>"exclusion"</code>.</p>
+
+<h2>Shadows, glows, and outlines</h2>
+<p>These read the canvas's own alpha channel and paint underneath the existing content, so the workflow is: draw your shape or text on a transparent canvas, add the effect, then <code>drawImage</code> the whole layer onto the background.</p>
+<table>
+<thead><tr><th>Method</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>c:dropShadow(dx, dy, sigma, color?, strength?)</code></td><td>A blurred shadow offset by <code>dx, dy</code>. Black by default.</td></tr>
+<tr><td><code>c:glow(sigma, color?, strength?)</code></td><td>A soft halo around everything opaque. White by default; pass the shape's own color for a neon look.</td></tr>
+<tr><td><code>c:outline(color, radius?)</code></td><td>A hard edge traced around everything opaque.</td></tr>
+</tbody>
+</table>
+<div class="codeblock"><div class="window-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="window-title">src/main.luau</span></div><pre><code class="language-luau">--#include[canvas, fs]
+
+local bg = canvas.new(200, 200, "#0a0e1e")
+
+local badge = canvas.new(160, 160)
+badge:strokeCircle(80, 80, 55, "#9be352", 3)
+badge:circle(80, 80, 16, "#9be352")
+badge:glow(8, "#9be352", 1.5)
+
+bg:drawImage(badge, 20, 20)
+fs.writeImage("@self/badge.png", bg)</code></pre></div>
+
+<h2>Transforms</h2>
+<table>
+<thead><tr><th>Method</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>c:resize(w, h, filter?)</code></td><td>Resamples to a new size. Filters: <code>"nearest"</code>, <code>"linear"</code>, <code>"cubic"</code>, <code>"gaussian"</code>, <code>"lanczos"</code> (the default).</td></tr>
+<tr><td><code>c:scale(factor, filter?)</code></td><td>Resize by a multiplier.</td></tr>
+<tr><td><code>c:thumbnail(w, h)</code></td><td>A fast downscale for previews.</td></tr>
+<tr><td><code>c:crop(x, y, w, h)</code></td><td>Keeps just a region.</td></tr>
+<tr><td><code>c:rotate90()</code> / <code>rotate180()</code> / <code>rotate270()</code></td><td>Exact right-angle rotations.</td></tr>
+<tr><td><code>c:rotate(degrees, background?)</code></td><td>Free rotation about the center; corners fill with the background.</td></tr>
+<tr><td><code>c:flipX()</code> / <code>c:flipY()</code></td><td>Mirrors horizontally or vertically.</td></tr>
+<tr><td><code>c:shift(dx, dy)</code></td><td>Slides the content; vacated pixels turn transparent.</td></tr>
+<tr><td><code>c:pad(left, top, right, bottom, color?)</code></td><td>Grows the canvas with a border.</td></tr>
+<tr><td><code>c:trim()</code></td><td>Crops away fully transparent edges.</td></tr>
+</tbody>
+</table>
+
+<h2>Filters and adjustments</h2>
+<table>
+<thead><tr><th>Method</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>c:grayscale()</code></td><td>Converts to shades of gray, keeping alpha.</td></tr>
+<tr><td><code>c:invert()</code></td><td>Inverts the colors.</td></tr>
+<tr><td><code>c:sepia()</code></td><td>An old photograph tone.</td></tr>
+<tr><td><code>c:brightness(delta)</code></td><td>Adds <code>delta</code> to every channel, -255 to 255.</td></tr>
+<tr><td><code>c:contrast(factor)</code></td><td>Stretches around middle gray; 1 is unchanged.</td></tr>
+<tr><td><code>c:gamma(g)</code></td><td>Gamma correction; above 1 brightens midtones.</td></tr>
+<tr><td><code>c:exposure(stops)</code></td><td>Photographic exposure; each stop doubles the light.</td></tr>
+<tr><td><code>c:levels(inBlack, inWhite, outBlack?, outWhite?)</code></td><td>Remaps the tonal range, like a levels dialog.</td></tr>
+<tr><td><code>c:normalize()</code></td><td>Auto contrast: stretches the darkest and brightest pixels to full range.</td></tr>
+<tr><td><code>c:equalize()</code></td><td>Histogram equalization for flat, punchy tone distribution.</td></tr>
+<tr><td><code>c:saturate(factor)</code></td><td>0 drains to gray, 1 is unchanged, above 1 boosts.</td></tr>
+<tr><td><code>c:hueRotate(degrees)</code></td><td>Spins hues around the color wheel.</td></tr>
+<tr><td><code>c:temperature(amount)</code></td><td>White balance from -100 (cool blue) to 100 (warm orange).</td></tr>
+<tr><td><code>c:tint(color, strength?)</code></td><td>Mixes every pixel toward a color.</td></tr>
+<tr><td><code>c:duotone(dark, light)</code></td><td>Maps shadows to one color and highlights to another.</td></tr>
+<tr><td><code>c:solarize(threshold?)</code></td><td>Inverts only the channels above a threshold.</td></tr>
+<tr><td><code>c:channels(rFactor, gFactor, bFactor)</code></td><td>Multiplies each color channel independently.</td></tr>
+<tr><td><code>c:colorReplace(from, to, tolerance?)</code></td><td>Swaps one color for another across the canvas.</td></tr>
+<tr><td><code>c:chromaKey(color, tolerance?, softness?)</code></td><td>Green screen: turns a color transparent with a soft edge.</td></tr>
+<tr><td><code>c:opacity(factor)</code></td><td>Multiplies the alpha channel, 0 to 1.</td></tr>
+<tr><td><code>c:blur(sigma)</code></td><td>Gaussian blur.</td></tr>
+<tr><td><code>c:motionBlur(angle, distance)</code></td><td>Directional streaking, angle in degrees.</td></tr>
+<tr><td><code>c:sharpen(sigma?, threshold?)</code></td><td>Unsharp mask.</td></tr>
+<tr><td><code>c:pixelate(blockSize)</code></td><td>Mosaic of solid blocks.</td></tr>
+<tr><td><code>c:posterize(levels)</code></td><td>Reduces each channel to a few levels.</td></tr>
+<tr><td><code>c:dither(levels?)</code></td><td>Floyd-Steinberg dithering; with 2 levels a classic 1-bit look.</td></tr>
+<tr><td><code>c:threshold(level?)</code></td><td>Black and white by luminance, default cutoff 128.</td></tr>
+<tr><td><code>c:noise(amount)</code></td><td>Adds random grain.</td></tr>
+<tr><td><code>c:scanlines(spacing?, opacity?)</code></td><td>Darkens every few rows for a CRT look.</td></tr>
+<tr><td><code>c:vignette(strength?, color?)</code></td><td>Darkens toward the corners.</td></tr>
+<tr><td><code>c:emboss()</code></td><td>A raised relief effect.</td></tr>
+<tr><td><code>c:edges()</code></td><td>Sobel edge detection.</td></tr>
+<tr><td><code>c:convolve(kernel, bias?)</code></td><td>Your own 3x3 kernel as 9 numbers; the escape hatch for custom filters.</td></tr>
+</tbody>
+</table>
+
+<h2>Distortions</h2>
+<table>
+<thead><tr><th>Method</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>c:wave(amplitudeX, wavelengthX, amplitudeY?, wavelengthY?)</code></td><td>Sine wave displacement, watery ripples.</td></tr>
+<tr><td><code>c:swirl(cx, cy, radius, degrees)</code></td><td>Twists pixels around a point, strongest at the center.</td></tr>
+<tr><td><code>c:bulge(cx, cy, radius, amount)</code></td><td>Fisheye bulge with positive amounts, pinch with negative.</td></tr>
+<tr><td><code>c:chromaticAberration(offset)</code></td><td>Shifts the red and blue channels apart for a lens fringe.</td></tr>
+<tr><td><code>c:skew(xDegrees, yDegrees, background?)</code></td><td>Shears the image horizontally and vertically.</td></tr>
+</tbody>
+</table>
+
+<h2>Channels and regions</h2>
+<table>
+<thead><tr><th>Method</th><th>Returns</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>c:blit(source, sx, sy, sw, sh, dx, dy)</code></td><td><code>Canvas</code></td><td>Copies a rectangle of another canvas (or of itself) onto this one with blending.</td></tr>
+<tr><td><code>c:channel(name)</code></td><td><code>Canvas</code></td><td>Extracts <code>"r"</code>, <code>"g"</code>, <code>"b"</code>, or <code>"a"</code> as a grayscale canvas.</td></tr>
+<tr><td><code>c:setChannel(name, source)</code></td><td><code>Canvas</code></td><td>Writes a channel from another canvas's brightness.</td></tr>
+<tr><td><code>c:splitChannels()</code></td><td><code>4 canvases</code></td><td>All four channels at once: <code>local r, g, b, a = c:splitChannels()</code>.</td></tr>
+<tr><td><code>c:getBounds()</code></td><td><code>x, y, w, h</code></td><td>The bounding box of non-transparent content, or <code>nil</code> when empty.</td></tr>
+<tr><td><code>c:dominantColors(count?)</code></td><td><code>{ color }</code></td><td>The most common colors, each with a <code>count</code> of pixels.</td></tr>
+</tbody>
+</table>
+
+<h2>Noise maps</h2>
+<p><code>canvas.noise(options?)</code> creates a seeded, endless field of coherent noise for textures, terrain, clouds, and generative art. The field is defined for every coordinate, so you can render one region now and a neighboring region later and they join seamlessly, which makes maps expandable after creation. All options can be changed later with <code>set</code>, letting you interject steps mid-generation for unique results.</p>
+<table>
+<thead><tr><th>Option</th><th>Default</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td><code>seed</code></td><td>random</td><td>The same seed always produces the same field.</td></tr>
+<tr><td><code>scale</code></td><td>64</td><td>Pixels per feature; bigger means smoother, broader shapes.</td></tr>
+<tr><td><code>octaves</code></td><td>4</td><td>Layers of detail, 1 to 12.</td></tr>
+<tr><td><code>persistence</code></td><td>0.5</td><td>How much each octave contributes; higher is rougher.</td></tr>
+<tr><td><code>lacunarity</code></td><td>2</td><td>Frequency step between octaves.</td></tr>
+<tr><td><code>kind</code></td><td><code>"perlin"</code></td><td><code>"perlin"</code> (smooth), <code>"value"</code> (blocky-smooth), <code>"worley"</code> (cellular), <code>"ridged"</code> (mountain ridges).</td></tr>
+</tbody>
+</table>
+<table>
+<thead><tr><th>Method</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>n:sample(x, y)</code></td><td>The noise value at a point, 0 to 1. Same inputs always give the same value.</td></tr>
+<tr><td><code>n:image(w, h, options?)</code></td><td>Renders a region into a new canvas. Options: <code>x</code>/<code>y</code> world offset for rendering a different window of the field, <code>stops</code> to map values through a gradient (instant terrain coloring), <code>alpha = true</code> to write into the alpha channel instead.</td></tr>
+<tr><td><code>n:fill(target, options?)</code></td><td>Same, into an existing canvas.</td></tr>
+<tr><td><code>n:set(options)</code></td><td>Changes any option live, including the seed and kind.</td></tr>
+<tr><td><code>n:warp(other, strength)</code></td><td>Domain warping: another noise map bends this one's coordinates, producing organic, one-of-a-kind flows. <code>n:unwarp()</code> removes it.</td></tr>
+</tbody>
+</table>
+<div class="codeblock"><div class="window-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="window-title">src/main.luau</span></div><pre><code class="language-luau">--#include[canvas, fs]
+
+local terrain = canvas.noise({ seed = 1337, scale = 60, octaves = 6 })
+local map = terrain:image(512, 512, {
+    stops = {
+        { 0.0, "#0b2d5c" },
+        { 0.45, "#1d6fc2" },
+        { 0.5, "#e8dfa8" },
+        { 0.6, "#4d9440" },
+        { 0.85, "#6b6b60" },
+        { 1.0, "#ffffff" },
+    },
+})
+
+-- Render the region just to the east later; the edge lines up seamlessly.
+local east = terrain:image(512, 512, { x = 512 })
+
+fs.writeImage("@self/map.png", map)</code></pre></div>
+
+<h2>Analysis</h2>
+<table>
+<thead><tr><th>Method</th><th>Returns</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>c:averageColor()</code></td><td><code>{r, g, b, a}</code></td><td>The mean color of the whole canvas.</td></tr>
+<tr><td><code>c:histogram(channel?)</code></td><td><code>{ number }</code></td><td>256 buckets of pixel counts for <code>"r"</code>, <code>"g"</code>, <code>"b"</code>, <code>"a"</code>, or <code>"luma"</code> (the default).</td></tr>
+<tr><td><code>c:compare(other)</code></td><td><code>number</code></td><td>Similarity from 0 to 1; handy in tests.</td></tr>
+</tbody>
+</table>
+
+<h2>Saving and loading</h2>
+<table>
+<thead><tr><th>Function</th><th>Returns</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>c:encode(format?, quality?)</code></td><td><code>string</code></td><td>The encoded bytes, PNG by default. <code>quality</code> 1-100 applies to JPG.</td></tr>
+<tr><td><code>c:dataUrl(format?)</code></td><td><code>string</code></td><td>A <code>data:</code> URL for embedding in HTML.</td></tr>
+<tr><td><code>fs.writeImage(path, canvas, format?, quality?)</code></td><td><code>string</code></td><td>Encodes and writes a file. The format comes from the extension when not given. Returns the full path.</td></tr>
+<tr><td><code>fs.readImage(path)</code></td><td><code>Canvas</code></td><td>Reads and decodes any supported image file into a canvas.</td></tr>
+</tbody>
+</table>
+<div class="codeblock"><div class="window-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="window-title">src/main.luau</span></div><pre><code class="language-luau">--#include[canvas, fs]
+
+local photo = fs.readImage("@self/photo.jpg")
+photo:resize(800, 600)
+photo:saturate(1.2)
+photo:vignette(0.4)
+fs.writeImage("@self/photo-edited.jpg", photo, "jpg", 92)</code></pre></div>
+<div class="note"><div class="note-title">Performance</div><p>A canvas lives entirely in memory at 4 bytes per pixel, so a 4000x4000 image costs about 64 MB. Filters walk every pixel; on very large images prefer doing your edits before <code>resize</code> only when they need the detail, and use <code>thumbnail</code> for quick previews.</p></div>
+</article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer>Lehua is built in Rust on mlua and tokio. Made for people who love Luau.</footer>
+<script src="assets/site.js" defer></script>
+</body>
+</html>

@@ -276,21 +276,21 @@ fn dispatch_request(lua: &Lua, sched: &Rc<VmScheduler>, req: HttpRequest, cb: &F
     let ud = match lua.create_userdata(req) {
         Ok(u) => u,
         Err(e) => {
-            eprintln!("lehua: net: http request handler error: {e}");
+            eprintln!("lehua: net: http request handler error: {}", crate::error::pretty(&e));
             return;
         }
     };
     let thread = match lua.create_thread(cb.clone()) {
         Ok(t) => t,
         Err(e) => {
-            eprintln!("lehua: net: http request handler error: {e}");
+            eprintln!("lehua: net: http request handler error: {}", crate::error::pretty(&e));
             return;
         }
     };
     let fut = match thread.into_async::<Value>(&ud) {
         Ok(f) => f,
         Err(e) => {
-            eprintln!("lehua: net: http request handler error: {e}");
+            eprintln!("lehua: net: http request handler error: {}", crate::error::pretty(&e));
             return;
         }
     };
@@ -318,14 +318,14 @@ fn dispatch_request(lua: &Lua, sched: &Rc<VmScheduler>, req: HttpRequest, cb: &F
                             let _ = sender.send(data);
                         }
                         Err(e) => {
-                            eprintln!("lehua: net: http request handler error: {e}");
+                            eprintln!("lehua: net: http request handler error: {}", crate::error::pretty(&e));
                             let _ = sender.send(error_response(500, "internal error"));
                         }
                     }
                 }
             }
             Err(e) => {
-                eprintln!("lehua: net: http request handler error: {e}");
+                eprintln!("lehua: net: http request handler error: {}", crate::error::pretty(&e));
                 if let Some(sender) = pending {
                     let _ = sender.send(error_response(500, "internal error"));
                 }

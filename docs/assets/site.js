@@ -41,6 +41,7 @@
       { t: "sqlite", h: "sqlite.html" },
       { t: "mongo", h: "mongo.html" },
       { t: "net", h: "net.html" },
+      { t: "canvas", h: "canvas.html" },
       { t: "random", h: "random.html" },
       { t: "task", h: "task.html" }
     ]},
@@ -200,7 +201,7 @@
 
   // ---- Syntax highlighting ----
   var LUAU_KW = "local function end if then else elseif for in do while repeat until return break continue and or not nil true false type export".split(" ");
-  var LUAU_GLOBAL = "require parallel channel __dirname __filename fs process serde cryptography datetime regex stdio luau url semver archive sqlite mongo net random task buffer print assert pcall error tostring tonumber pairs ipairs select".split(" ");
+  var LUAU_GLOBAL = "require parallel channel __dirname __filename fs process serde cryptography datetime regex stdio luau url semver archive sqlite mongo net random task canvas dll buffer print assert pcall error tostring tonumber pairs ipairs select".split(" ");
   var kw = {}, gl = {};
   LUAU_KW.forEach(function (w) { kw[w] = 1; });
   LUAU_GLOBAL.forEach(function (w) { gl[w] = 1; });

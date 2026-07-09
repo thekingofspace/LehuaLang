@@ -6,6 +6,40 @@ use sysinfo::System;
 use super::{LibCtx, PathScope};
 use crate::error::LehuaError;
 
+fn parse_env_value(raw: &str) -> String {
+    if raw.len() >= 2 && raw.starts_with('"') && raw.ends_with('"') {
+        let inner = &raw[1..raw.len() - 1];
+        let mut out = String::with_capacity(inner.len());
+        let mut chars = inner.chars();
+        while let Some(c) = chars.next() {
+            if c == '\\' {
+                match chars.next() {
+                    Some('n') => out.push('\n'),
+                    Some('r') => out.push('\r'),
+                    Some('t') => out.push('\t'),
+                    Some('"') => out.push('"'),
+                    Some('\\') => out.push('\\'),
+                    Some(other) => {
+                        out.push('\\');
+                        out.push(other);
+                    }
+                    None => out.push('\\'),
+                }
+            } else {
+                out.push(c);
+            }
+        }
+        return out;
+    }
+    if raw.len() >= 2 && raw.starts_with('\'') && raw.ends_with('\'') {
+        return raw[1..raw.len() - 1].to_string();
+    }
+    match raw.find(" #") {
+        Some(i) => raw[..i].trim_end().to_string(),
+        None => raw.to_string(),
+    }
+}
+
 pub fn build(ctx: &LibCtx) -> mlua::Result<Value> {
     let lua = ctx.lua;
     let t = lua.create_table()?;
@@ -120,6 +154,53 @@ pub fn build(ctx: &LibCtx) -> mlua::Result<Value> {
             Ok(out)
         })?,
     )?;
+
+    {
+        let scope = scope.clone();
+        t.set(
+            "loadEnv",
+            lua.create_function(move |lua, (path, opts): (Option<String>, Option<Table>)| {
+                let full = scope.resolve(path.as_deref().unwrap_or(".env"))?;
+                let text = std::fs::read_to_string(&full).map_err(|e| {
+                    LehuaError::msg(format!("could not read env file '{}': {e}", full.display()))
+                })?;
+                let mut apply = true;
+                let mut overwrite = false;
+                if let Some(o) = &opts {
+                    if let Some(a) = o.get::<Option<bool>>("apply")? {
+                        apply = a;
+                    }
+                    if let Some(ov) = o.get::<Option<bool>>("override")? {
+                        overwrite = ov;
+                    }
+                }
+                let out = lua.create_table()?;
+                for raw in text.lines() {
+                    let line = raw.trim();
+                    if line.is_empty() || line.starts_with('#') {
+                        continue;
+                    }
+                    let line = line.strip_prefix("export ").unwrap_or(line).trim_start();
+                    let Some(eq) = line.find('=') else { continue };
+                    let key = line[..eq].trim();
+                    if key.is_empty()
+                        || !key
+                            .chars()
+                            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '.')
+                    {
+                        continue;
+                    }
+                    let raw_value = line[eq + 1..].trim();
+                    let value = parse_env_value(raw_value);
+                    if apply && (overwrite || std::env::var_os(key).is_none()) {
+                        std::env::set_var(key, &value);
+                    }
+                    out.raw_set(key, value)?;
+                }
+                Ok(out)
+            })?,
+        )?;
+    }
 
     {
         let scope = scope.clone();
