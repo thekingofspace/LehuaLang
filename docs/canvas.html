@@ -41,7 +41,9 @@
 <tbody>
 <tr><td><code>canvas.new(width, height, background?)</code></td><td><code>Canvas</code></td><td>A new canvas up to 16384x16384. The background defaults to transparent.</td></tr>
 <tr><td><code>canvas.decode(bytes)</code></td><td><code>Canvas</code></td><td>Decodes encoded image bytes (from a file, an HTTP body, anywhere).</td></tr>
-<tr><td><code>canvas.fromPixels(width, height, rgba)</code></td><td><code>Canvas</code></td><td>Builds a canvas from raw RGBA bytes, 4 per pixel.</td></tr>
+<tr><td><code>canvas.fromPixels(width, height, rgba)</code></td><td><code>Canvas</code></td><td>Builds a canvas from raw RGBA bytes, 4 per pixel, given as a string or a buffer.</td></tr>
+<tr><td><code>canvas.montage(canvases, options?)</code></td><td><code>Canvas</code></td><td>Lays a list of canvases out in a grid, each centered in its cell. Options: <code>cols</code> (default: near square), <code>gap</code> pixels between cells, <code>background</code> color.</td></tr>
+<tr><td><code>canvas.checker(width, height, size?, color1?, color2?)</code></td><td><code>Canvas</code></td><td>A checkerboard, 8 pixel squares in light gray and white by default. The classic backdrop for viewing transparent images.</td></tr>
 <tr><td><code>canvas.font(path)</code></td><td><code>Font</code></td><td>Loads a TTF or OTF font for <code>text</code>, e.g. <code>"C:/Windows/Fonts/arial.ttf"</code>. <code>font:measure(text, size)</code> returns the pixel width and height.</td></tr>
 <tr><td><code>canvas.formats()</code></td><td><code>{ string }</code></td><td>The encodable formats: png, jpg, gif, bmp, ico, tiff, webp, qoi, tga.</td></tr>
 </tbody>
@@ -67,13 +69,32 @@
 <tr><td><code>c:clone()</code></td><td><code>Canvas</code></td><td>An independent copy.</td></tr>
 <tr><td><code>c:getPixel(x, y)</code></td><td><code>{r, g, b, a}</code></td><td>One pixel. Coordinates start at 0 in the top left.</td></tr>
 <tr><td><code>c:setPixel(x, y, color)</code></td><td><code>Canvas</code></td><td>Writes one pixel. Out of bounds writes are ignored.</td></tr>
+<tr><td><code>c:sample(x, y)</code></td><td><code>{r, g, b, a}</code></td><td>The color at fractional coordinates, blended from the four nearest pixels. Outside the canvas it fades to transparent.</td></tr>
 <tr><td><code>c:pixels()</code></td><td><code>string</code></td><td>The raw RGBA bytes.</td></tr>
+<tr><td><code>c:buffer(x?, y?, w?, h?)</code></td><td><code>buffer</code></td><td>The raw RGBA bytes as a Luau buffer, for the whole canvas or a region. See below.</td></tr>
+<tr><td><code>c:setBuffer(data, x?, y?, w?, h?)</code></td><td><code>Canvas</code></td><td>Writes raw RGBA bytes from a buffer or string back onto the canvas, whole or as a block at <code>(x, y)</code>. See below.</td></tr>
 <tr><td><code>c:mapPixels(fn)</code></td><td><code>Canvas</code></td><td>Calls <code>fn(x, y, r, g, b, a)</code> for every pixel; returned values replace the channels.</td></tr>
 <tr><td><code>c:clear(color?)</code></td><td><code>Canvas</code></td><td>Resets every pixel, transparent by default. <code>c:fill(color)</code> is the same with a required color.</td></tr>
 <tr><td><code>c:floodFill(x, y, color, tolerance?)</code></td><td><code>Canvas</code></td><td>Paint bucket from a point, spreading over pixels within <code>tolerance</code> of the start color.</td></tr>
+<tr><td><code>c:slice(tileWidth, tileHeight)</code></td><td><code>{ Canvas }</code></td><td>Cuts the canvas into tiles, left to right then top to bottom, the usual way to unpack a sprite sheet. Edge tiles may come out smaller.</td></tr>
 </tbody>
 </table>
 <p>Every drawing and editing method returns the canvas itself, so calls chain: <code>canvas.new(64, 64):fill("navy"):circle(32, 32, 20, "gold"):blur(2)</code>.</p>
+
+<h3>Working with buffers</h3>
+<p><code>c:buffer()</code> and <code>c:setBuffer(data)</code> move pixels in bulk between a canvas and Luau's built-in <code>buffer</code> type. This is by far the fastest way to do per-pixel work from Luau: read the whole image once, edit bytes in place with <code>buffer.readu8</code> and <code>buffer.writeu8</code>, and write it back once. Each pixel is 4 bytes in RGBA order, rows run top to bottom, so pixel <code>(x, y)</code> starts at <code>(y * width + x) * 4</code>.</p>
+<p>Both take an optional region. <code>c:buffer(x, y, w, h)</code> reads just that block and raises an error if it reaches outside the canvas. <code>c:setBuffer(data, x, y, w, h)</code> writes a <code>w</code> by <code>h</code> block at <code>(x, y)</code>; parts that land outside the canvas are clipped, so negative coordinates work for stamping partially visible sprites. Buffer writes replace pixels outright, alpha and all, with no blending.</p>
+<div class="codeblock"><div class="window-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="window-title">src/main.luau</span></div><pre><code class="language-luau">--#include[canvas]
+
+local c = canvas.new(256, 256, "black")
+
+local buf = c:buffer()
+for i = 0, buffer.len(buf) - 1, 4 do
+    local x = (i // 4) % 256
+    buffer.writeu8(buf, i, x)
+    buffer.writeu8(buf, i + 2, 255 - x)
+end
+c:setBuffer(buf)</code></pre></div>
 
 <h2>Shapes</h2>
 <p>Coordinates are pixels; angles are degrees. Where <code>thickness</code> appears it defaults to 1 and thick strokes get round caps.</p>
@@ -92,6 +113,9 @@
 <tr><td><code>c:arc(cx, cy, r, startAngle, endAngle, color, thickness?)</code></td><td>A circular arc stroke.</td></tr>
 <tr><td><code>c:pie(cx, cy, r, startAngle, endAngle, color)</code></td><td>A filled wedge.</td></tr>
 <tr><td><code>c:bezier(x1, y1, cx1, cy1, cx2, cy2, x2, y2, color)</code></td><td>A cubic bezier curve.</td></tr>
+<tr><td><code>c:arrow(x1, y1, x2, y2, color, thickness?, headSize?)</code></td><td>A line with a filled arrowhead at the second point. The head defaults to 4 times the thickness, at least 8 pixels.</td></tr>
+<tr><td><code>c:star(cx, cy, points, outerRadius, innerRadius, color, rotation?)</code></td><td>A filled star. One tip points up; <code>rotation</code> turns the whole star clockwise in degrees.</td></tr>
+<tr><td><code>c:grid(spacingX, spacingY, color, thickness?)</code></td><td>Vertical and horizontal lines across the whole canvas, every so many pixels. Use a translucent color for a subtle overlay.</td></tr>
 </tbody>
 </table>
 <p><code>points</code> is either a flat list <code>{ x1, y1, x2, y2, ... }</code> or a list of <code>{ x, y }</code> tables.</p>
@@ -159,6 +183,8 @@ fs.writeImage("@self/badge.png", bg)</code></pre></div>
 <tr><td><code>c:resize(w, h, filter?)</code></td><td>Resamples to a new size. Filters: <code>"nearest"</code>, <code>"linear"</code>, <code>"cubic"</code>, <code>"gaussian"</code>, <code>"lanczos"</code> (the default).</td></tr>
 <tr><td><code>c:scale(factor, filter?)</code></td><td>Resize by a multiplier.</td></tr>
 <tr><td><code>c:thumbnail(w, h)</code></td><td>A fast downscale for previews.</td></tr>
+<tr><td><code>c:fit(w, h, background?, filter?)</code></td><td>Scales to fit inside the size without distortion, centered on a canvas of exactly that size; the leftover space fills with the background (transparent by default). Letterboxing.</td></tr>
+<tr><td><code>c:cover(w, h, filter?)</code></td><td>Scales to fill the size without distortion and crops the overflow from the edges. What image galleries do to thumbnails.</td></tr>
 <tr><td><code>c:crop(x, y, w, h)</code></td><td>Keeps just a region.</td></tr>
 <tr><td><code>c:rotate90()</code> / <code>rotate180()</code> / <code>rotate270()</code></td><td>Exact right-angle rotations.</td></tr>
 <tr><td><code>c:rotate(degrees, background?)</code></td><td>Free rotation about the center; corners fill with the background.</td></tr>
@@ -201,6 +227,7 @@ fs.writeImage("@self/badge.png", bg)</code></pre></div>
 <tr><td><code>c:dither(levels?)</code></td><td>Floyd-Steinberg dithering; with 2 levels a classic 1-bit look.</td></tr>
 <tr><td><code>c:threshold(level?)</code></td><td>Black and white by luminance, default cutoff 128.</td></tr>
 <tr><td><code>c:noise(amount)</code></td><td>Adds random grain.</td></tr>
+<tr><td><code>c:halftone(cellSize, color?, background?)</code></td><td>Redraws the image as newspaper-style dots, one per cell, sized by darkness. Black on white by default.</td></tr>
 <tr><td><code>c:scanlines(spacing?, opacity?)</code></td><td>Darkens every few rows for a CRT look.</td></tr>
 <tr><td><code>c:vignette(strength?, color?)</code></td><td>Darkens toward the corners.</td></tr>
 <tr><td><code>c:emboss()</code></td><td>A raised relief effect.</td></tr>

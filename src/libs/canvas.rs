@@ -747,6 +747,18 @@ fn borrow_canvas(ud: &AnyUserData) -> mlua::Result<mlua::UserDataRef<Canvas>> {
         .map_err(|_| LehuaError::msg("expected a canvas").into())
 }
 
+fn data_bytes(v: &Value, what: &str) -> mlua::Result<Vec<u8>> {
+    match v {
+        Value::Buffer(b) => Ok(b.to_vec()),
+        Value::String(s) => Ok(s.as_bytes().to_vec()),
+        other => Err(LehuaError::msg(format!(
+            "{what} expects a buffer or string of RGBA bytes, got {}",
+            other.type_name()
+        ))
+        .into()),
+    }
+}
+
 struct Lcg(u64);
 
 impl Lcg {
@@ -1338,6 +1350,98 @@ impl UserData for Canvas {
                     draw_composited(&mut this.img.borrow_mut(), c, |img, c| {
                         for pair in pts.windows(2) {
                             thick_line(img, pair[0].0, pair[0].1, pair[1].0, pair[1].1, c, t);
+                        }
+                    });
+                }
+                Ok(ud)
+            },
+        );
+
+        m.add_function(
+            "arrow",
+            |_, (ud, x1, y1, x2, y2, color, thickness, head_size): (AnyUserData, f32, f32, f32, f32, Value, Option<f32>, Option<f32>)| {
+                {
+                    let this = borrow_canvas(&ud)?;
+                    let c = parse_color(&color)?;
+                    let t = thickness.unwrap_or(1.0);
+                    draw_composited(&mut this.img.borrow_mut(), c, |img, c| {
+                        let dx = x2 - x1;
+                        let dy = y2 - y1;
+                        let len = (dx * dx + dy * dy).sqrt();
+                        if len < 0.5 || !len.is_finite() {
+                            return;
+                        }
+                        let ux = dx / len;
+                        let uy = dy / len;
+                        let head = head_size.unwrap_or((t * 4.0).max(8.0)).clamp(1.0, len);
+                        let bx = x2 - ux * head;
+                        let by = y2 - uy * head;
+                        thick_line(img, x1, y1, bx, by, c, t);
+                        let half = head * 0.5;
+                        let px = -uy * half;
+                        let py = ux * half;
+                        let mut tri = vec![
+                            Point::new(x2.round() as i32, y2.round() as i32),
+                            Point::new((bx + px).round() as i32, (by + py).round() as i32),
+                            Point::new((bx - px).round() as i32, (by - py).round() as i32),
+                        ];
+                        tri.dedup();
+                        if tri.len() >= 3 && tri.first() != tri.last() {
+                            drawing::draw_polygon_mut(img, &tri, c);
+                        }
+                    });
+                }
+                Ok(ud)
+            },
+        );
+
+        m.add_function(
+            "star",
+            |_, (ud, cx, cy, points, outer, inner, color, rotation): (AnyUserData, f32, f32, u32, f32, f32, Value, Option<f32>)| {
+                {
+                    let this = borrow_canvas(&ud)?;
+                    let points = points.clamp(3, 360);
+                    let c = parse_color(&color)?;
+                    let rot = rotation.unwrap_or(0.0).to_radians() - std::f32::consts::FRAC_PI_2;
+                    let mut pts = Vec::with_capacity(points as usize * 2);
+                    for i in 0..points * 2 {
+                        let r = if i % 2 == 0 { outer } else { inner };
+                        let a = rot + std::f32::consts::PI * i as f32 / points as f32;
+                        pts.push((cx + r * a.cos(), cy + r * a.sin()));
+                    }
+                    let poly = polygon_points(&pts)?;
+                    draw_composited(&mut this.img.borrow_mut(), c, |img, c| {
+                        drawing::draw_polygon_mut(img, &poly, c);
+                    });
+                }
+                Ok(ud)
+            },
+        );
+
+        m.add_function(
+            "grid",
+            |_, (ud, spacing_x, spacing_y, color, thickness): (AnyUserData, f32, f32, Value, Option<f32>)| {
+                {
+                    let this = borrow_canvas(&ud)?;
+                    if !(spacing_x.is_finite() && spacing_y.is_finite())
+                        || spacing_x < 1.0
+                        || spacing_y < 1.0
+                    {
+                        return Err(LehuaError::msg("grid: spacing must be at least 1").into());
+                    }
+                    let c = parse_color(&color)?;
+                    let t = thickness.unwrap_or(1.0);
+                    draw_composited(&mut this.img.borrow_mut(), c, |img, c| {
+                        let (w, h) = img.dimensions();
+                        let mut x = spacing_x;
+                        while x < w as f32 {
+                            thick_line(img, x, 0.0, x, h as f32 - 1.0, c, t);
+                            x += spacing_x;
+                        }
+                        let mut y = spacing_y;
+                        while y < h as f32 {
+                            thick_line(img, 0.0, y, w as f32 - 1.0, y, c, t);
+                            y += spacing_y;
                         }
                     });
                 }
@@ -1961,6 +2065,63 @@ impl UserData for Canvas {
             }
             Ok(ud)
         });
+
+        m.add_function(
+            "fit",
+            |_, (ud, w, h, background, filter): (AnyUserData, u32, u32, Option<Value>, Option<String>)| {
+                {
+                    let this = borrow_canvas(&ud)?;
+                    if w == 0 || h == 0 || w > 16384 || h > 16384 {
+                        return Err(
+                            LehuaError::msg("fit: size must be between 1x1 and 16384x16384").into(),
+                        );
+                    }
+                    let f = filter_name(filter)?;
+                    let bg = opt_color(&background, Rgba([0, 0, 0, 0]))?;
+                    let src = this.img.borrow().clone();
+                    let (sw, sh) = src.dimensions();
+                    let ratio = (w as f64 / sw as f64).min(h as f64 / sh as f64);
+                    let nw = ((sw as f64 * ratio).round() as u32).clamp(1, w);
+                    let nh = ((sh as f64 * ratio).round() as u32).clamp(1, h);
+                    let resized = imageops::resize(&src, nw, nh, f);
+                    let mut out = RgbaImage::from_pixel(w, h, bg);
+                    let ox = (w - nw) / 2;
+                    let oy = (h - nh) / 2;
+                    for (x, y, sp) in resized.enumerate_pixels() {
+                        let dp = *out.get_pixel(ox + x, oy + y);
+                        out.put_pixel(ox + x, oy + y, composite_pixel(dp, *sp, Blend::Normal, 1.0));
+                    }
+                    *this.img.borrow_mut() = out;
+                }
+                Ok(ud)
+            },
+        );
+
+        m.add_function(
+            "cover",
+            |_, (ud, w, h, filter): (AnyUserData, u32, u32, Option<String>)| {
+                {
+                    let this = borrow_canvas(&ud)?;
+                    if w == 0 || h == 0 || w > 16384 || h > 16384 {
+                        return Err(
+                            LehuaError::msg("cover: size must be between 1x1 and 16384x16384").into(),
+                        );
+                    }
+                    let f = filter_name(filter)?;
+                    let src = this.img.borrow().clone();
+                    let (sw, sh) = src.dimensions();
+                    let ratio = (w as f64 / sw as f64).max(h as f64 / sh as f64);
+                    let nw = ((sw as f64 * ratio).round() as u32).max(w);
+                    let nh = ((sh as f64 * ratio).round() as u32).max(h);
+                    let resized = imageops::resize(&src, nw, nh, f);
+                    let ox = (nw - w) / 2;
+                    let oy = (nh - h) / 2;
+                    let out = imageops::crop_imm(&resized, ox, oy, w, h).to_image();
+                    *this.img.borrow_mut() = out;
+                }
+                Ok(ud)
+            },
+        );
 
         m.add_function(
             "crop",
@@ -3078,6 +3239,173 @@ impl UserData for Canvas {
             ))
         });
 
+        m.add_method(
+            "buffer",
+            |lua, this, (x, y, w, h): (Option<i64>, Option<i64>, Option<u32>, Option<u32>)| {
+                let img = this.img.borrow();
+                match (x, y, w, h) {
+                    (None, None, None, None) => lua.create_buffer(img.as_raw().as_slice()),
+                    (Some(x), Some(y), Some(w), Some(h)) => {
+                        let (cw, ch) = img.dimensions();
+                        if x < 0
+                            || y < 0
+                            || w == 0
+                            || h == 0
+                            || x as u64 + w as u64 > cw as u64
+                            || y as u64 + h as u64 > ch as u64
+                        {
+                            return Err(LehuaError::msg(format!(
+                                "buffer: region {w}x{h} at ({x}, {y}) is outside the {cw}x{ch} canvas"
+                            ))
+                            .into());
+                        }
+                        let mut out = Vec::with_capacity(w as usize * h as usize * 4);
+                        for row in 0..h {
+                            for col in 0..w {
+                                out.extend_from_slice(&img.get_pixel(x as u32 + col, y as u32 + row).0);
+                            }
+                        }
+                        lua.create_buffer(out)
+                    }
+                    _ => Err(LehuaError::msg("buffer: pass no region, or all of x, y, w, h").into()),
+                }
+            },
+        );
+
+        m.add_function(
+            "setBuffer",
+            |_, (ud, data, x, y, w, h): (AnyUserData, Value, Option<i64>, Option<i64>, Option<u32>, Option<u32>)| {
+                {
+                    let bytes = data_bytes(&data, "setBuffer")?;
+                    let this = borrow_canvas(&ud)?;
+                    let mut img = this.img.borrow_mut();
+                    let (cw, ch) = img.dimensions();
+                    match (x, y, w, h) {
+                        (None, None, None, None) => {
+                            let expected = cw as u64 * ch as u64 * 4;
+                            if bytes.len() as u64 != expected {
+                                return Err(LehuaError::msg(format!(
+                                    "setBuffer: expected {expected} bytes of RGBA data for {cw}x{ch}, got {}",
+                                    bytes.len()
+                                ))
+                                .into());
+                            }
+                            *img = RgbaImage::from_raw(cw, ch, bytes)
+                                .ok_or_else(|| LehuaError::msg("setBuffer: invalid buffer"))?;
+                        }
+                        (Some(x), Some(y), Some(w), Some(h)) => {
+                            let expected = w as u64 * h as u64 * 4;
+                            if bytes.len() as u64 != expected {
+                                return Err(LehuaError::msg(format!(
+                                    "setBuffer: expected {expected} bytes of RGBA data for a {w}x{h} region, got {}",
+                                    bytes.len()
+                                ))
+                                .into());
+                            }
+                            for row in 0..h as i64 {
+                                let ty = y + row;
+                                if ty < 0 || ty >= ch as i64 {
+                                    continue;
+                                }
+                                for col in 0..w as i64 {
+                                    let tx = x + col;
+                                    if tx < 0 || tx >= cw as i64 {
+                                        continue;
+                                    }
+                                    let i = (row as usize * w as usize + col as usize) * 4;
+                                    img.put_pixel(
+                                        tx as u32,
+                                        ty as u32,
+                                        Rgba([bytes[i], bytes[i + 1], bytes[i + 2], bytes[i + 3]]),
+                                    );
+                                }
+                            }
+                        }
+                        _ => {
+                            return Err(LehuaError::msg(
+                                "setBuffer: pass no region, or all of x, y, w, h",
+                            )
+                            .into())
+                        }
+                    }
+                }
+                Ok(ud)
+            },
+        );
+
+        m.add_method("sample", |lua, this, (x, y): (f64, f64)| {
+            let img = this.img.borrow();
+            color_to_table(lua, sample_bilinear(&img, x, y))
+        });
+
+        m.add_method("slice", |lua, this, (tw, th): (u32, u32)| {
+            if tw == 0 || th == 0 {
+                return Err(LehuaError::msg("slice: tile size must be at least 1x1").into());
+            }
+            let img = this.img.borrow();
+            let (w, h) = img.dimensions();
+            let out = lua.create_table()?;
+            let mut i = 0;
+            let mut y = 0;
+            while y < h {
+                let cur_h = th.min(h - y);
+                let mut x = 0;
+                while x < w {
+                    let cur_w = tw.min(w - x);
+                    let tile = imageops::crop_imm(&*img, x, y, cur_w, cur_h).to_image();
+                    i += 1;
+                    out.raw_seti(i, from_image(tile))?;
+                    x += tw;
+                }
+                y += th;
+            }
+            Ok(out)
+        });
+
+        m.add_function(
+            "halftone",
+            |_, (ud, cell, color, background): (AnyUserData, u32, Option<Value>, Option<Value>)| {
+                {
+                    let this = borrow_canvas(&ud)?;
+                    let cell = cell.clamp(2, 256);
+                    let fg = opt_color(&color, Rgba([0, 0, 0, 255]))?;
+                    let bg = opt_color(&background, Rgba([255, 255, 255, 255]))?;
+                    let src = this.img.borrow().clone();
+                    let (w, h) = src.dimensions();
+                    let mut out = RgbaImage::from_pixel(w, h, bg);
+                    let mut y = 0;
+                    while y < h {
+                        let ch = cell.min(h - y);
+                        let mut x = 0;
+                        while x < w {
+                            let cw = cell.min(w - x);
+                            let mut acc = 0.0;
+                            for yy in y..y + ch {
+                                for xx in x..x + cw {
+                                    let p = src.get_pixel(xx, yy);
+                                    acc += (255.0 - luminance(p)) * (p.0[3] as f64 / 255.0);
+                                }
+                            }
+                            let darkness = acc / (cw * ch) as f64 / 255.0;
+                            let r = darkness.sqrt() * cell as f64 * 0.55;
+                            if r >= 0.5 {
+                                drawing::draw_filled_circle_mut(
+                                    &mut out,
+                                    (x as i32 + cw as i32 / 2, y as i32 + ch as i32 / 2),
+                                    r.round() as i32,
+                                    fg,
+                                );
+                            }
+                            x += cell;
+                        }
+                        y += cell;
+                    }
+                    *this.img.borrow_mut() = out;
+                }
+                Ok(ud)
+            },
+        );
+
         m.add_meta_method(MetaMethod::ToString, |_, this, ()| {
             let img = this.img.borrow();
             Ok(format!("Canvas({}x{})", img.width(), img.height()))
@@ -3108,13 +3436,13 @@ pub fn build(ctx: &LibCtx) -> mlua::Result<Value> {
 
     t.set(
         "fromPixels",
-        lua.create_function(|_, (w, h, data): (u32, u32, mlua::LuaString)| {
+        lua.create_function(|_, (w, h, data): (u32, u32, Value)| {
             if w == 0 || h == 0 || w > 16384 || h > 16384 {
                 return Err(
                     LehuaError::msg("fromPixels: size must be between 1x1 and 16384x16384").into(),
                 );
             }
-            let bytes = data.as_bytes().to_vec();
+            let bytes = data_bytes(&data, "fromPixels")?;
             let expected = w as u64 * h as u64 * 4;
             if bytes.len() as u64 != expected {
                 return Err(LehuaError::msg(format!(
@@ -3126,6 +3454,84 @@ pub fn build(ctx: &LibCtx) -> mlua::Result<Value> {
             let img = RgbaImage::from_raw(w, h, bytes)
                 .ok_or_else(|| LehuaError::msg("fromPixels: invalid buffer"))?;
             Ok(from_image(img))
+        })?,
+    )?;
+
+    t.set(
+        "checker",
+        lua.create_function(
+            |_, (w, h, size, color1, color2): (u32, u32, Option<u32>, Option<Value>, Option<Value>)| {
+                if w == 0 || h == 0 || w > 16384 || h > 16384 {
+                    return Err(LehuaError::msg(
+                        "canvas.checker: size must be between 1x1 and 16384x16384",
+                    )
+                    .into());
+                }
+                let size = size.unwrap_or(8).max(1);
+                let a = opt_color(&color1, Rgba([204, 204, 204, 255]))?;
+                let b = opt_color(&color2, Rgba([255, 255, 255, 255]))?;
+                let mut img = RgbaImage::new(w, h);
+                for (x, y, p) in img.enumerate_pixels_mut() {
+                    *p = if ((x / size) + (y / size)) % 2 == 0 { a } else { b };
+                }
+                Ok(from_image(img))
+            },
+        )?,
+    )?;
+
+    t.set(
+        "montage",
+        lua.create_function(|_, (items, opts): (Vec<AnyUserData>, Option<Table>)| {
+            if items.is_empty() {
+                return Err(LehuaError::msg("canvas.montage: needs at least one canvas").into());
+            }
+            let mut cols = 0usize;
+            let mut gap = 0u32;
+            let mut bg = Rgba([0, 0, 0, 0]);
+            if let Some(o) = &opts {
+                if let Some(c) = o.get::<Option<u32>>("cols")? {
+                    cols = c as usize;
+                }
+                if let Some(g) = o.get::<Option<u32>>("gap")? {
+                    gap = g.min(16384);
+                }
+                let bgv: Value = o.get("background")?;
+                if !bgv.is_nil() {
+                    bg = parse_color(&bgv)?;
+                }
+            }
+            let sources: Vec<RgbaImage> = items
+                .iter()
+                .map(|ud| Ok(borrow_canvas(ud)?.img.borrow().clone()))
+                .collect::<mlua::Result<_>>()?;
+            let n = sources.len();
+            if cols == 0 {
+                cols = (n as f64).sqrt().ceil() as usize;
+            }
+            let cols = cols.max(1).min(n);
+            let rows = n.div_ceil(cols);
+            let cell_w = sources.iter().map(|i| i.width()).max().unwrap_or(1).max(1);
+            let cell_h = sources.iter().map(|i| i.height()).max().unwrap_or(1).max(1);
+            let total_w = cols as u64 * cell_w as u64 + (cols as u64 - 1) * gap as u64;
+            let total_h = rows as u64 * cell_h as u64 + (rows as u64 - 1) * gap as u64;
+            if total_w > 16384 || total_h > 16384 {
+                return Err(LehuaError::msg(format!(
+                    "canvas.montage: result would be {total_w}x{total_h}, the limit is 16384x16384"
+                ))
+                .into());
+            }
+            let mut out = RgbaImage::from_pixel(total_w as u32, total_h as u32, bg);
+            for (i, src) in sources.iter().enumerate() {
+                let col = (i % cols) as u32;
+                let row = (i / cols) as u32;
+                let ox = col * (cell_w + gap) + (cell_w - src.width()) / 2;
+                let oy = row * (cell_h + gap) + (cell_h - src.height()) / 2;
+                for (x, y, sp) in src.enumerate_pixels() {
+                    let dp = *out.get_pixel(ox + x, oy + y);
+                    out.put_pixel(ox + x, oy + y, composite_pixel(dp, *sp, Blend::Normal, 1.0));
+                }
+            }
+            Ok(from_image(out))
         })?,
     )?;
 
