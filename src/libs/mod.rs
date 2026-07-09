@@ -34,7 +34,6 @@ pub mod task;
 #[cfg(feature = "lib-url")]
 pub mod url;
 
-use std::collections::BTreeMap;
 use std::path::{Component, Path, PathBuf};
 use std::rc::Rc;
 use std::sync::Arc;
@@ -141,8 +140,8 @@ pub fn build(name: &str, ctx: &LibCtx) -> mlua::Result<Value> {
 #[allow(dead_code)]
 pub struct PathScope {
     base: PathBuf,
-    root: PathBuf,
-    aliases: BTreeMap<String, String>,
+    engine: Arc<Engine>,
+    lua: mlua::WeakLua,
 }
 
 #[allow(dead_code)]
@@ -150,8 +149,8 @@ impl PathScope {
     pub fn new(ctx: &LibCtx) -> Rc<Self> {
         Rc::new(PathScope {
             base: ctx.real_dir.clone(),
-            root: ctx.engine.provider.base_dir().to_path_buf(),
-            aliases: ctx.engine.resolver.aliases.clone(),
+            engine: ctx.engine.clone(),
+            lua: ctx.lua.weak(),
         })
     }
 
@@ -167,8 +166,8 @@ impl PathScope {
             };
             let dir = if name == "self" {
                 self.base.clone()
-            } else if let Some(a) = self.aliases.get(name) {
-                self.root.join(vpath::to_native(a))
+            } else if let Some(a) = self.engine.resolver.aliases.get(name) {
+                self.engine.provider.base_dir().join(vpath::to_native(a))
             } else {
                 return Err(LehuaError::msg(format!("unknown path alias '@{name}'")).into());
             };
@@ -176,12 +175,28 @@ impl PathScope {
             return Ok(normalize(&joined));
         }
         let pp = Path::new(p);
-        let joined = if pp.is_absolute() {
-            pp.to_path_buf()
-        } else {
-            self.base.join(pp)
-        };
-        Ok(normalize(&joined))
+        if pp.is_absolute() {
+            return Ok(normalize(pp));
+        }
+        let mut bases: Vec<PathBuf> = Vec::new();
+        if let Some(lua) = self.lua.try_upgrade() {
+            for id in self.engine.call_chain(&lua) {
+                let dir = self.engine.real_dir_of(&id);
+                if !bases.contains(&dir) {
+                    bases.push(dir);
+                }
+            }
+        }
+        if !bases.contains(&self.base) {
+            bases.push(self.base.clone());
+        }
+        for b in &bases {
+            let cand = normalize(&b.join(pp));
+            if cand.exists() {
+                return Ok(cand);
+            }
+        }
+        Ok(normalize(&bases[0].join(pp)))
     }
 }
 

@@ -161,22 +161,46 @@ pub fn build_bundle(
                 }
                 continue;
             }
-            let resolved = if kind == DepKind::Parallel {
-                resolver
-                    .resolve_worker(&vpath::dirname(&id), &literal, &provider)
-                    .map(Resolved::Module)
-            } else {
-                resolver.resolve(&id, &literal, &provider)
-            };
-            match resolved {
-                Ok(Resolved::Module(mid)) => queue.push(mid),
-                Ok(Resolved::Builtin(name)) => {
-                    required_builtins.insert(name);
+            let lit = literal.trim();
+            let relative = lit.starts_with("./")
+                || lit.starts_with("../")
+                || (kind == DepKind::Parallel && !lit.starts_with('@'));
+            let mut bases: Vec<String> = vec![id.clone()];
+            if relative && id != entry_id {
+                bases.push(entry_id.clone());
+            }
+            let mut found = false;
+            let mut first_err: Option<String> = None;
+            for base in &bases {
+                let resolved = if kind == DepKind::Parallel {
+                    resolver
+                        .resolve_worker(std::slice::from_ref(base), base, &literal, &provider)
+                        .map(Resolved::Module)
+                } else {
+                    resolver.resolve(base, &literal, &provider)
+                };
+                match resolved {
+                    Ok(Resolved::Module(mid)) => {
+                        queue.push(mid);
+                        found = true;
+                    }
+                    Ok(Resolved::Builtin(name)) => {
+                        required_builtins.insert(name);
+                        found = true;
+                    }
+                    Err(e) => {
+                        if first_err.is_none() {
+                            first_err = Some(e.to_string());
+                        }
+                    }
                 }
-                Err(e) => notes.push(format!(
-                    "in '{id}': could not statically resolve {} \"{literal}\" ({e}); not bundled",
-                    kind.as_str()
-                )),
+            }
+            if !found {
+                notes.push(format!(
+                    "in '{id}': could not statically resolve {} \"{literal}\" ({}); not bundled",
+                    kind.as_str(),
+                    first_err.unwrap_or_default()
+                ));
             }
         }
     }

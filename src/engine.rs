@@ -39,6 +39,46 @@ impl Engine {
     pub fn real_file_of(&self, id: &str) -> PathBuf {
         self.provider.base_dir().join(vpath::to_native(id))
     }
+
+    pub fn call_chain(&self, lua: &Lua) -> Vec<String> {
+        let mut frames: Vec<String> = Vec::new();
+        let mut level = 0;
+        loop {
+            let frame = lua.inspect_stack(level, |d| {
+                let s = d.source();
+                if s.what == "C" {
+                    return None;
+                }
+                s.source.map(|src| src.into_owned())
+            });
+            match frame {
+                None => break,
+                Some(Some(src)) => {
+                    let id = src.strip_prefix('@').unwrap_or(&src);
+                    if self.provider.exists(id) && frames.last().map(|l| l != id).unwrap_or(true) {
+                        frames.push(id.to_string());
+                    }
+                }
+                Some(None) => {}
+            }
+            level += 1;
+        }
+        let mut chain: Vec<String> = Vec::new();
+        for id in frames.into_iter().rev() {
+            if !chain.contains(&id) {
+                chain.push(id);
+            }
+        }
+        chain
+    }
+
+    pub fn from_chain(&self, lua: &Lua, from_id: &str) -> Vec<String> {
+        let mut chain = self.call_chain(lua);
+        if !chain.iter().any(|c| c == from_id) {
+            chain.push(from_id.to_string());
+        }
+        chain
+    }
 }
 
 pub struct VmContext {
@@ -397,10 +437,11 @@ async fn require_impl(
     from_id: &str,
     request: &str,
 ) -> mlua::Result<Value> {
+    let chain = ctx.engine.from_chain(lua, from_id);
     let resolved = ctx
         .engine
         .resolver
-        .resolve(from_id, request, ctx.engine.provider.as_ref())?;
+        .resolve_chain(&chain, from_id, request, ctx.engine.provider.as_ref())?;
 
     match resolved {
         Resolved::Builtin(name) => builtin_value(lua, ctx, from_id, &name),

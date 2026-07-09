@@ -6,7 +6,6 @@ use mlua::{Function, Lua, MultiValue, UserData, UserDataMethods, Value};
 use crate::engine::{self, Engine};
 use crate::error::LehuaError;
 use crate::portable::PortableValue;
-use crate::vpath;
 
 pub struct Port {
     tx: Sender<PortableValue>,
@@ -51,10 +50,10 @@ impl UserData for Port {
 }
 
 pub fn make_parallel(lua: &Lua, engine: Arc<Engine>, from_id: &str) -> mlua::Result<Function> {
-    let from_dir = vpath::dirname(from_id);
+    let from_id = from_id.to_string();
     lua.create_async_function(move |lua, args: MultiValue| {
         let engine = engine.clone();
-        let from_dir = from_dir.clone();
+        let from_id = from_id.clone();
         async move {
             let mut it = args.into_iter();
             let path = match it.next() {
@@ -69,10 +68,11 @@ pub fn make_parallel(lua: &Lua, engine: Arc<Engine>, from_id: &str) -> mlua::Res
                 .map(|v| PortableValue::from_lua(&v))
                 .collect::<crate::error::Result<_>>()?;
 
+            let chain = engine.from_chain(&lua, &from_id);
             let worker_id =
                 engine
                     .resolver
-                    .resolve_worker(&from_dir, &path, engine.provider.as_ref())?;
+                    .resolve_worker(&chain, &from_id, &path, engine.provider.as_ref())?;
 
             let (a_tx, a_rx) = async_channel::unbounded::<PortableValue>();
             let (b_tx, b_rx) = async_channel::unbounded::<PortableValue>();

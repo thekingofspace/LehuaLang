@@ -11,6 +11,14 @@ pub enum Resolved {
     Module(String),
 }
 
+fn chain_label(chain: &[String], from_id: &str) -> String {
+    if chain.is_empty() {
+        from_id.to_string()
+    } else {
+        chain.join(" -> ")
+    }
+}
+
 pub struct Resolver {
     pub aliases: BTreeMap<String, String>,
     pub roots_dir: String,
@@ -90,20 +98,56 @@ impl Resolver {
         self.resolve_root(provider, req)
     }
 
+    pub fn resolve_chain(
+        &self,
+        chain: &[String],
+        from_id: &str,
+        request: &str,
+        provider: &dyn ModuleProvider,
+    ) -> Result<Resolved> {
+        let req = request.trim();
+        if req.starts_with("./") || req.starts_with("../") {
+            for from in chain {
+                let target = vpath::join(&vpath::dirname(from), req);
+                if let Ok(r) = self.resolve_file(provider, &target, from, request) {
+                    return Ok(r);
+                }
+            }
+            return Err(LehuaError::ModuleNotFound {
+                name: request.to_string(),
+                from: chain_label(chain, from_id),
+            });
+        }
+        self.resolve(from_id, request, provider)
+    }
+
     pub fn resolve_worker(
         &self,
-        base_dir: &str,
+        chain: &[String],
+        from_id: &str,
         path: &str,
         provider: &dyn ModuleProvider,
     ) -> Result<String> {
-        let target = vpath::join(base_dir, path);
-        match self.resolve_file(provider, &target, "parallel", path)? {
-            Resolved::Module(id) => Ok(id),
-            Resolved::Builtin(_) => Err(LehuaError::ModuleNotFound {
-                name: path.to_string(),
-                from: base_dir.to_string(),
-            }),
+        let p = path.trim();
+        if p.starts_with('@') {
+            return match self.resolve(from_id, p, provider)? {
+                Resolved::Module(id) => Ok(id),
+                Resolved::Builtin(_) => Err(LehuaError::ModuleNotFound {
+                    name: path.to_string(),
+                    from: from_id.to_string(),
+                }),
+            };
         }
+        for from in chain {
+            let target = vpath::join(&vpath::dirname(from), p);
+            if let Ok(Resolved::Module(id)) = self.resolve_file(provider, &target, from, path) {
+                return Ok(id);
+            }
+        }
+        Err(LehuaError::ModuleNotFound {
+            name: path.to_string(),
+            from: chain_label(chain, from_id),
+        })
     }
 
     fn resolve_root(&self, provider: &dyn ModuleProvider, name: &str) -> Result<Resolved> {
