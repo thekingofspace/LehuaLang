@@ -124,6 +124,48 @@ fn opt_document(lua: &Lua, v: &Option<Table>) -> mlua::Result<Document> {
     }
 }
 
+fn update_fragment(lua: &Lua, t: &Table) -> mlua::Result<Document> {
+    let doc = table_to_document(lua, t, 0)?;
+    if doc.is_empty() || doc.keys().any(|k| k.starts_with('$')) {
+        return Ok(doc);
+    }
+    for (key, value) in doc.iter() {
+        if let Bson::Document(inner) = value {
+            if !inner.is_empty() && inner.keys().all(|k| k.starts_with('$')) {
+                return Err(LehuaError::msg(format!(
+                    "mongo: field '{key}' holds an update operator; operators go at the top level, like mongo.increment({{ {key} = 1 }})"
+                ))
+                .into());
+            }
+        }
+    }
+    let mut wrapped = Document::new();
+    wrapped.insert("$set", doc);
+    Ok(wrapped)
+}
+
+fn update_document(lua: &Lua, t: &Table) -> mlua::Result<Document> {
+    if t.raw_len() == 0 {
+        return update_fragment(lua, t);
+    }
+    let mut merged = Document::new();
+    for fragment in t.sequence_values::<Table>() {
+        for (key, value) in update_fragment(lua, &fragment?)? {
+            match (merged.get_mut(&key), value) {
+                (Some(Bson::Document(existing)), Bson::Document(extra)) => {
+                    for (inner_key, inner_value) in extra {
+                        existing.insert(inner_key, inner_value);
+                    }
+                }
+                (_, value) => {
+                    merged.insert(key, value);
+                }
+            }
+        }
+    }
+    Ok(merged)
+}
+
 fn ordered_keys_document(lua: &Lua, t: &Table) -> mlua::Result<Document> {
     if t.raw_len() > 0 {
         let mut doc = Document::new();
@@ -408,7 +450,7 @@ impl UserData for LuaMongoCollection {
              this: UserDataRef<Self>,
              (filter, update, opts): (Table, Table, Option<Table>)| async move {
                 let filter = table_to_document(&lua, &filter, 0)?;
-                let update = table_to_document(&lua, &update, 0)?;
+                let update = update_document(&lua, &update)?;
                 let mut options = UpdateOptions::builder().build();
                 if let Some(o) = &opts {
                     options.upsert = o.get::<Option<bool>>("upsert")?;
@@ -436,7 +478,7 @@ impl UserData for LuaMongoCollection {
              this: UserDataRef<Self>,
              (filter, update, opts): (Table, Table, Option<Table>)| async move {
                 let filter = table_to_document(&lua, &filter, 0)?;
-                let update = table_to_document(&lua, &update, 0)?;
+                let update = update_document(&lua, &update)?;
                 let mut options = UpdateOptions::builder().build();
                 if let Some(o) = &opts {
                     options.upsert = o.get::<Option<bool>>("upsert")?;
@@ -741,5 +783,91 @@ pub fn build(ctx: &LibCtx) -> mlua::Result<Value> {
         })?,
     )?;
 
+    for (name, op) in [
+        ("set", "$set"),
+        ("setOnInsert", "$setOnInsert"),
+        ("increment", "$inc"),
+        ("multiply", "$mul"),
+        ("rename", "$rename"),
+        ("setMin", "$min"),
+        ("setMax", "$max"),
+        ("push", "$push"),
+        ("pull", "$pull"),
+        ("pullAll", "$pullAll"),
+        ("addToSet", "$addToSet"),
+    ] {
+        t.set(
+            name,
+            lua.create_function(move |lua, fields: Table| {
+                let out = lua.create_table()?;
+                out.set(op, fields)?;
+                Ok(out)
+            })?,
+        )?;
+    }
+
+    for (name, op, value) in [
+        ("unset", "$unset", unset_marker as fn(&Lua) -> mlua::Result<Value>),
+        ("setNow", "$currentDate", |_| Ok(Value::Boolean(true))),
+        ("popFirst", "$pop", |_| Ok(Value::Integer(-1))),
+        ("popLast", "$pop", |_| Ok(Value::Integer(1))),
+    ] {
+        t.set(
+            name,
+            lua.create_function(move |lua, fields: Value| {
+                let inner = lua.create_table()?;
+                match &fields {
+                    Value::String(s) => inner.set(s.clone(), value(lua)?)?,
+                    Value::Table(list) if list.raw_len() > 0 => {
+                        for field in list.sequence_values::<String>() {
+                            inner.set(field?, value(lua)?)?;
+                        }
+                    }
+                    other => {
+                        return Err(LehuaError::msg(format!(
+                            "mongo.{name}: expected a field name or a list of field names, got {}",
+                            other.type_name()
+                        ))
+                        .into())
+                    }
+                }
+                let out = lua.create_table()?;
+                out.set(op, inner)?;
+                Ok(out)
+            })?,
+        )?;
+    }
+
+    t.set(
+        "pushAll",
+        lua.create_function(|lua, fields: Table| {
+            let inner = lua.create_table()?;
+            for pair in fields.pairs::<Value, Value>() {
+                let (field, values) = pair?;
+                let Value::Table(list) = &values else {
+                    return Err(LehuaError::msg(
+                        "mongo.pushAll: each field needs a list of values",
+                    )
+                    .into());
+                };
+                let arr = lua.create_table_with_capacity(list.raw_len(), 0)?;
+                for (i, v) in (1usize..).zip(list.sequence_values::<Value>()) {
+                    arr.raw_seti(i, v?)?;
+                }
+                arr.set_metatable(Some(lua.array_metatable()))?;
+                let each = lua.create_table()?;
+                each.set("$each", arr)?;
+                inner.set(field, each)?;
+            }
+            let out = lua.create_table()?;
+            out.set("$push", inner)?;
+            Ok(out)
+        })?,
+    )?;
+
     Ok(Value::Table(t))
+}
+
+fn unset_marker(lua: &Lua) -> mlua::Result<Value> {
+    Ok(Value::String(lua.create_string("")?))
 }

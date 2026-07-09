@@ -69,7 +69,7 @@ local users = db:collection("users")</code></pre></div>
 <tr><td><code>coll:insertMany(docs)</code></td><td><code>{ id }</code></td><td>Inserts an array of documents and returns their ids in order.</td></tr>
 <tr><td><code>coll:findOne(filter?, options?)</code></td><td><code>table?</code></td><td>The first matching document, or <code>nil</code>.</td></tr>
 <tr><td><code>coll:find(filter?, options?)</code></td><td><code>{ table }</code></td><td>Every matching document. See the options below.</td></tr>
-<tr><td><code>coll:updateOne(filter, update, options?)</code></td><td><code>table</code></td><td>Applies operators like <code>$set</code> to the first match. Returns <code>{ matched, modified, upsertedId? }</code>. Pass <code>{ upsert = true }</code> to insert when nothing matches.</td></tr>
+<tr><td><code>coll:updateOne(filter, update, options?)</code></td><td><code>table</code></td><td>Changes the first match. See <a href="#updates">Updates</a> for what the update argument can be. Returns <code>{ matched, modified, upsertedId? }</code>. Pass <code>{ upsert = true }</code> to insert when nothing matches.</td></tr>
 <tr><td><code>coll:updateMany(filter, update, options?)</code></td><td><code>table</code></td><td>The same, for every match.</td></tr>
 <tr><td><code>coll:replaceOne(filter, replacement, options?)</code></td><td><code>table</code></td><td>Swaps the whole document for a new one.</td></tr>
 <tr><td><code>coll:deleteOne(filter)</code></td><td><code>number</code></td><td>Deletes the first match. Returns how many were deleted.</td></tr>
@@ -122,9 +122,40 @@ local users = db:collection("users")</code></pre></div>
 local either = users:find(mongo.anyOf({
     { role = "admin" },
     { name = mongo.regex("^ada", "i") },
-}))
+}))</code></pre></div>
 
-users:updateOne({ _id = someId }, { ["$set"] = { active = true } })</code></pre></div>
+<h2 id="updates">Updates</h2>
+<p>The update argument to <code>updateOne</code> and <code>updateMany</code> describes what to change. A plain table simply writes those fields, so the common case needs no operators at all:</p>
+<div class="codeblock"><div class="window-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="window-title">src/main.luau</span></div><pre><code class="language-luau">users:updateOne({ _id = someId }, { active = true })</code></pre></div>
+<p>For anything beyond writing values, helper functions build the standard MongoDB update operators for you, so you never spell out <code>["$set"]</code> by hand.</p>
+<table>
+<thead><tr><th>Helper</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td><code>mongo.set(fields)</code></td><td>Writes each field's value. Same as passing the plain table.</td></tr>
+<tr><td><code>mongo.unset(fields)</code></td><td>Removes a field. Takes one field name or a list of them.</td></tr>
+<tr><td><code>mongo.increment(fields)</code></td><td>Adds a number to each field: <code>mongo.increment({ views = 1 })</code>.</td></tr>
+<tr><td><code>mongo.multiply(fields)</code></td><td>Multiplies each field by a number.</td></tr>
+<tr><td><code>mongo.setMin(fields)</code>, <code>mongo.setMax(fields)</code></td><td>Writes the value only when it is lower / higher than what is stored.</td></tr>
+<tr><td><code>mongo.rename(fields)</code></td><td>Renames fields: <code>mongo.rename({ oldName = "newName" })</code>.</td></tr>
+<tr><td><code>mongo.setNow(fields)</code></td><td>Writes the current date. Takes one field name or a list of them.</td></tr>
+<tr><td><code>mongo.setOnInsert(fields)</code></td><td>Writes the fields only when an upsert inserts a new document.</td></tr>
+<tr><td><code>mongo.push(fields)</code></td><td>Appends one value to each array field.</td></tr>
+<tr><td><code>mongo.pushAll(fields)</code></td><td>Appends a list of values to each array field: <code>mongo.pushAll({ tags = {"a", "b"} })</code>.</td></tr>
+<tr><td><code>mongo.addToSet(fields)</code></td><td>Appends a value unless the array already contains it.</td></tr>
+<tr><td><code>mongo.pull(fields)</code></td><td>Removes every matching value from an array field. The value may be a filter operator like <code>mongo.gte(10)</code>.</td></tr>
+<tr><td><code>mongo.pullAll(fields)</code></td><td>Removes every value in a list from an array field.</td></tr>
+<tr><td><code>mongo.popFirst(fields)</code>, <code>mongo.popLast(fields)</code></td><td>Removes the first / last item of an array field. Takes one field name or a list of them.</td></tr>
+</tbody>
+</table>
+<p>Pass one helper on its own, or combine several in an array and they merge into a single update:</p>
+<div class="codeblock"><div class="window-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="window-title">src/main.luau</span></div><pre><code class="language-luau">posts:updateOne({ uid = user }, mongo.set(post))
+
+posts:updateOne({ _id = postId }, {
+    mongo.increment({ views = 1 }),
+    mongo.setNow("lastViewedAt"),
+    mongo.push({ history = "viewed" }),
+})</code></pre></div>
+<div class="note"><div class="note-title">Raw operators still work</div><p>A table with <code>$</code> keys at the top level, like <code>{ ["$set"] = { active = true } }</code>, passes through untouched, so existing code keeps working.</p></div>
 
 <h2>Ids and how values convert</h2>
 <p>Every document gets an <code>_id</code>. <code>mongo.objectId()</code> makes a fresh id object; <code>mongo.objectId(hex)</code> rebuilds one from its 24 character hex text; <code>mongo.isObjectId(value)</code> checks for one. Id objects convert to real MongoDB ObjectIds when written and come back as the same kind of object when read. <code>tostring(id)</code> or <code>id:hex()</code> gives the hex text, and two ids compare equal with <code>==</code> when they hold the same value.</p>

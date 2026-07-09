@@ -396,14 +396,16 @@ export type MongoFindOptions = {
 
 export type MongoOperator = { [string]: any }
 
+export type MongoUpdate = MongoDocument | { MongoDocument }
+
 export type MongoCollection = {
     name: (self: MongoCollection) -> string,
     insertOne: (self: MongoCollection, document: MongoDocument) -> any,
     insertMany: (self: MongoCollection, documents: { MongoDocument }) -> { any },
     findOne: (self: MongoCollection, filter: MongoDocument?, options: MongoFindOptions?) -> MongoDocument?,
     find: (self: MongoCollection, filter: MongoDocument?, options: MongoFindOptions?) -> { MongoDocument },
-    updateOne: (self: MongoCollection, filter: MongoDocument, update: MongoDocument, options: { upsert: boolean? }?) -> MongoUpdateResult,
-    updateMany: (self: MongoCollection, filter: MongoDocument, update: MongoDocument, options: { upsert: boolean? }?) -> MongoUpdateResult,
+    updateOne: (self: MongoCollection, filter: MongoDocument, update: MongoUpdate, options: { upsert: boolean? }?) -> MongoUpdateResult,
+    updateMany: (self: MongoCollection, filter: MongoDocument, update: MongoUpdate, options: { upsert: boolean? }?) -> MongoUpdateResult,
     replaceOne: (self: MongoCollection, filter: MongoDocument, replacement: MongoDocument, options: { upsert: boolean? }?) -> MongoUpdateResult,
     deleteOne: (self: MongoCollection, filter: MongoDocument) -> number,
     deleteMany: (self: MongoCollection, filter: MongoDocument) -> number,
@@ -460,6 +462,22 @@ export type Mongo = {
     anyOf: (filters: { MongoDocument }) -> MongoDocument,
     allOf: (filters: { MongoDocument }) -> MongoDocument,
     noneOf: (filters: { MongoDocument }) -> MongoDocument,
+    set: (fields: MongoDocument) -> MongoOperator,
+    setOnInsert: (fields: MongoDocument) -> MongoOperator,
+    unset: (fields: string | { string }) -> MongoOperator,
+    increment: (fields: { [string]: number }) -> MongoOperator,
+    multiply: (fields: { [string]: number }) -> MongoOperator,
+    rename: (fields: { [string]: string }) -> MongoOperator,
+    setMin: (fields: MongoDocument) -> MongoOperator,
+    setMax: (fields: MongoDocument) -> MongoOperator,
+    setNow: (fields: string | { string }) -> MongoOperator,
+    push: (fields: MongoDocument) -> MongoOperator,
+    pushAll: (fields: { [string]: { any } }) -> MongoOperator,
+    pull: (fields: MongoDocument) -> MongoOperator,
+    pullAll: (fields: { [string]: { any } }) -> MongoOperator,
+    addToSet: (fields: MongoDocument) -> MongoOperator,
+    popFirst: (fields: string | { string }) -> MongoOperator,
+    popLast: (fields: string | { string }) -> MongoOperator,
 }
 
 export type Sink = {
