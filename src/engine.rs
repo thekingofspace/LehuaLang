@@ -1,12 +1,14 @@
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::pin::Pin;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use mlua::chunk::Compiler;
-use mlua::{Function, Lua, MultiValue, Value};
+use mlua::thread::{AsyncThread, ThreadStatus};
+use mlua::{Function, IntoLuaMulti, Lua, MultiValue, Value};
 
 use crate::dll;
 use crate::error::{LehuaError, Result};
@@ -96,6 +98,145 @@ impl LoadingMap {
     }
 }
 
+pub struct SchedGuard {
+    sched: Rc<VmScheduler>,
+}
+
+impl SchedGuard {
+    pub fn new(sched: &Rc<VmScheduler>) -> Self {
+        sched.retain_task();
+        SchedGuard {
+            sched: sched.clone(),
+        }
+    }
+}
+
+impl Drop for SchedGuard {
+    fn drop(&mut self) {
+        self.sched.release_task();
+    }
+}
+
+pub struct ParkSlot {
+    args: RefCell<Option<MultiValue>>,
+    wake: tokio::sync::Notify,
+    guard: RefCell<Option<SchedGuard>>,
+}
+
+impl ParkSlot {
+    pub async fn wait(&self) {
+        self.wake.notified().await;
+    }
+
+    pub fn take(&self) -> (MultiValue, Option<SchedGuard>) {
+        (
+            self.args.borrow_mut().take().unwrap_or_default(),
+            self.guard.borrow_mut().take(),
+        )
+    }
+}
+
+enum ThreadEntry {
+    Busy,
+    Parked(Rc<ParkSlot>),
+}
+
+#[derive(Clone, Default)]
+pub struct ThreadControl(Rc<RefCell<HashMap<usize, ThreadEntry>>>);
+
+impl ThreadControl {
+    pub fn of(lua: &Lua) -> ThreadControl {
+        match lua.app_data_ref::<ThreadControl>() {
+            Some(c) => c.clone(),
+            None => {
+                let c = ThreadControl::default();
+                lua.set_app_data(c.clone());
+                c
+            }
+        }
+    }
+
+    pub fn set_busy(&self, key: usize) {
+        self.0.borrow_mut().insert(key, ThreadEntry::Busy);
+    }
+
+    pub fn remove(&self, key: usize) {
+        self.0.borrow_mut().remove(&key);
+    }
+
+    pub fn park(&self, key: usize) -> Rc<ParkSlot> {
+        let slot = Rc::new(ParkSlot {
+            args: RefCell::new(None),
+            wake: tokio::sync::Notify::new(),
+            guard: RefCell::new(None),
+        });
+        self.0
+            .borrow_mut()
+            .insert(key, ThreadEntry::Parked(slot.clone()));
+        slot
+    }
+
+    pub fn parked(&self, key: usize) -> Option<Rc<ParkSlot>> {
+        match self.0.borrow().get(&key) {
+            Some(ThreadEntry::Parked(slot)) => Some(slot.clone()),
+            _ => None,
+        }
+    }
+
+    pub fn is_busy(&self, key: usize) -> bool {
+        matches!(self.0.borrow().get(&key), Some(ThreadEntry::Busy))
+    }
+
+    pub fn wake(&self, key: usize, sched: &Rc<VmScheduler>, args: MultiValue) -> bool {
+        let Some(slot) = self.parked(key) else {
+            return false;
+        };
+        *slot.args.borrow_mut() = Some(args);
+        *slot.guard.borrow_mut() = Some(SchedGuard::new(sched));
+        self.set_busy(key);
+        slot.wake.notify_one();
+        true
+    }
+}
+
+pub async fn thread_step(
+    stream: &mut Pin<Box<AsyncThread<MultiValue>>>,
+) -> Option<mlua::Result<MultiValue>> {
+    std::future::poll_fn(|cx| futures_core::Stream::poll_next(stream.as_mut(), cx)).await
+}
+
+fn install_resume_hook(
+    lua: &Lua,
+    control: ThreadControl,
+    sched: Rc<VmScheduler>,
+) -> mlua::Result<()> {
+    let co: mlua::Table = lua.globals().get("coroutine")?;
+    let orig: Function = co.get("resume")?;
+    let wrapped = lua.create_function(move |lua, mut args: MultiValue| {
+        let target = match args.iter().next() {
+            Some(Value::Thread(t)) => Some(t.clone()),
+            _ => None,
+        };
+        if let Some(t) = target {
+            let key = t.to_pointer() as usize;
+            if control.parked(key).is_some() {
+                args.pop_front();
+                control.wake(key, &sched, args);
+                return true.into_lua_multi(lua);
+            }
+            if control.is_busy(key) {
+                return (
+                    false,
+                    "cannot resume a scheduler-managed thread unless it is suspended by coroutine.yield",
+                )
+                    .into_lua_multi(lua);
+            }
+        }
+        orig.call::<MultiValue>(args)
+    })?;
+    co.set("resume", wrapped)
+}
+
 pub struct VmContext {
     pub engine: Arc<Engine>,
     pub cache: RefCell<HashMap<String, Value>>,
@@ -125,6 +266,7 @@ pub struct VmScheduler {
     pub exit_code: Cell<i32>,
     tasks: Cell<usize>,
     idle: tokio::sync::Notify,
+    heartbeats_live: Cell<bool>,
 }
 
 #[allow(dead_code)]
@@ -167,6 +309,16 @@ impl VmScheduler {
         }
     }
 
+    pub async fn wait_unresumable(&self) {
+        loop {
+            self.wait_idle().await;
+            if !self.heartbeats_live.get() || self.heartbeat.borrow().is_empty() {
+                return;
+            }
+            self.idle.notified().await;
+        }
+    }
+
     pub fn run_close(&self) {
         let handlers: Vec<Function> = std::mem::take(&mut self.close.borrow_mut());
         let code = self.exit_code.get();
@@ -189,6 +341,8 @@ pub fn make_vm(engine: Arc<Engine>) -> Result<(Lua, Rc<VmContext>)> {
     install_pretty_print(&lua)?;
     let ctx = VmContext::new(engine);
     lua.set_app_data(ctx.loading.clone());
+    let control = ThreadControl::of(&lua);
+    install_resume_hook(&lua, control, ctx.sched.clone())?;
     Ok((lua, ctx))
 }
 
@@ -421,6 +575,7 @@ async fn heartbeat_loop(ctx: &Rc<VmContext>) {
     if ctx.sched.heartbeat.borrow().is_empty() {
         return;
     }
+    ctx.sched.heartbeats_live.set(true);
     let frame = Duration::from_secs_f64(1.0 / 60.0);
     let mut last = Instant::now();
     loop {
@@ -437,6 +592,7 @@ async fn heartbeat_loop(ctx: &Rc<VmContext>) {
             .map(|(_, f)| f.clone())
             .collect();
         if funcs.is_empty() {
+            ctx.sched.heartbeats_live.set(false);
             return;
         }
         for f in funcs {
@@ -625,7 +781,51 @@ async fn execute_module(
     }
     args.extend(extra_varargs);
 
-    func.call_async::<Value>(MultiValue::from_vec(args)).await
+    run_module_thread(lua, ctx, func, MultiValue::from_vec(args)).await
+}
+
+async fn run_module_thread(
+    lua: &Lua,
+    ctx: &Rc<VmContext>,
+    func: Function,
+    args: MultiValue,
+) -> mlua::Result<Value> {
+    let control = ThreadControl::of(lua);
+    let thread = lua.create_thread(func)?;
+    let key = thread.to_pointer() as usize;
+    control.set_busy(key);
+    let mut current_args = args;
+    let mut held: Option<SchedGuard> = None;
+    let result = loop {
+        let mut stream = match thread.clone().into_async::<MultiValue>(current_args) {
+            Ok(s) => Box::pin(s),
+            Err(e) => break Err(e),
+        };
+        match thread_step(&mut stream).await {
+            Some(Ok(vals)) => {
+                if thread.status() != ThreadStatus::Resumable {
+                    break Ok(vals.into_iter().next().unwrap_or(Value::Nil));
+                }
+                drop(stream);
+                let slot = control.park(key);
+                held.take();
+                tokio::select! {
+                    _ = slot.wait() => {
+                        let (args, guard) = slot.take();
+                        current_args = args;
+                        held = guard;
+                        control.set_busy(key);
+                    }
+                    _ = ctx.sched.wait_unresumable() => break Ok(Value::Nil),
+                }
+            }
+            Some(Err(e)) => break Err(e),
+            None => break Ok(Value::Nil),
+        }
+    };
+    control.remove(key);
+    drop(held);
+    result
 }
 
 fn compile_module(

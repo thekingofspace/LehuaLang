@@ -84,6 +84,20 @@ end)
 
 task.schedule(counter, 1)</code></pre></div>
 
+<h2>Yielding and resuming by hand</h2>
+<p>Every thread the runtime drives, whether it is the main script, module code, or a spawned task, follows the same rule: a plain <code>coroutine.yield()</code> suspends that thread indefinitely. It stays suspended until something resumes it, and the values passed to <code>coroutine.resume(thread, ...)</code> become the return values of the <code>yield</code> call. <code>task.spawn(thread, ...)</code> and <code>task.defer(thread, ...)</code> wake a suspended thread the same way. This is the building block for request and reply patterns, where a thread parks itself until a listener delivers an answer.</p>
+<div class="codeblock"><div class="window-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="window-title">src/main.luau</span></div><pre><code class="language-luau">--#include[task]
+
+local main = coroutine.running()
+
+task.spawn(function()
+    task.wait(1)
+    coroutine.resume(main, "wakey wakey")
+end)
+
+print(coroutine.yield()) -- prints "wakey wakey" one second later</code></pre></div>
+<p>Three details to know. <code>coroutine.resume</code> on a suspended runtime thread hands it back to the scheduler and returns <code>true</code> right away rather than running it inline. Resuming a runtime thread that is not suspended by <code>yield</code> returns <code>false</code> and a message. A suspended thread does not keep the program alive by itself: when nothing that could resume it remains, the program simply moves on, so a script whose last live thread is suspended exits cleanly. Coroutines you drive yourself with <code>coroutine.create</code> and <code>coroutine.resume</code> are untouched by all of this, and a coroutine handed to <code>task.schedule</code> keeps its generator behavior of one resume per interval.</p>
+
 <h2>The Task object</h2>
 <p>Every spawning function returns a <code>Task</code>, a handle you can keep to control the work later. The free functions <code>task.cancel(t)</code> and <code>task.reschedule(t, s)</code> do the same things as the methods.</p>
 <table>

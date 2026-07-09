@@ -1799,7 +1799,7 @@ dependencies = [
 
 [[package]]
 name = "lehua"
-version = "0.2.10"
+version = "0.2.11"
 dependencies = [
  "ab_glyph",
  "aes-gcm",
@@ -1812,6 +1812,7 @@ dependencies = [
  "clap",
  "crc32fast",
  "flate2",
+ "futures-core",
  "futures-util",
  "getrandom 0.4.3",
  "glob",
