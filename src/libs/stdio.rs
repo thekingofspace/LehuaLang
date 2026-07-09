@@ -5,7 +5,7 @@ use mlua::{Value, Variadic};
 use super::LibCtx;
 use crate::error::LehuaError;
 
-fn write_values(out: &mut dyn Write, args: &Variadic<Value>) -> mlua::Result<()> {
+fn write_values(out: &mut dyn Write, args: &Variadic<Value>, newline: bool) -> mlua::Result<()> {
     for a in args.iter() {
         match a {
             Value::String(s) => out.write_all(&s.as_bytes()).map_err(mlua::Error::external)?,
@@ -26,6 +26,9 @@ fn write_values(out: &mut dyn Write, args: &Variadic<Value>) -> mlua::Result<()>
                 .into())
             }
         }
+    }
+    if newline {
+        out.write_all(b"\n").map_err(mlua::Error::external)?;
     }
     out.flush().map_err(mlua::Error::external)?;
     Ok(())
@@ -344,10 +347,49 @@ fn lookup(table: &[(&str, &str)], kind: &str, name: &str) -> mlua::Result<String
     }
     let known: Vec<&str> = table.iter().map(|(n, _)| *n).collect();
     Err(LehuaError::msg(format!(
-        "unknown {kind} '{name}' (supported: {})",
+        "unknown {kind} '{name}' (supported: {}, or a hex code like #ff8800)",
         known.join(", ")
     ))
     .into())
+}
+
+fn parse_hex(name: &str) -> mlua::Result<Option<(u8, u8, u8)>> {
+    let Some(hex) = name.strip_prefix('#') else {
+        return Ok(None);
+    };
+    let expanded: String = match hex.len() {
+        3 => hex.chars().flat_map(|c| [c, c]).collect(),
+        6 => hex.to_string(),
+        _ => {
+            return Err(
+                LehuaError::msg(format!("invalid hex color '{name}' (expected #rgb or #rrggbb)"))
+                    .into(),
+            )
+        }
+    };
+    let parse = |range: std::ops::Range<usize>| {
+        u8::from_str_radix(&expanded[range], 16).map_err(|_| {
+            mlua::Error::from(LehuaError::msg(format!(
+                "invalid hex color '{name}' (expected #rgb or #rrggbb)"
+            )))
+        })
+    };
+    Ok(Some((parse(0..2)?, parse(2..4)?, parse(4..6)?)))
+}
+
+fn color_code(table: &[(&str, &str)], kind: &str, name: &str, layer: u8) -> mlua::Result<String> {
+    if let Some((r, g, b)) = parse_hex(name)? {
+        return Ok(format!("\u{1b}[{layer};2;{r};{g};{b}m"));
+    }
+    lookup(table, kind, name)
+}
+
+fn clamp_channel(kind: &str, v: i64) -> mlua::Result<u8> {
+    u8::try_from(v).map_err(|_| {
+        mlua::Error::from(LehuaError::msg(format!(
+            "stdio.{kind}: channels must be integers from 0 to 255, got {v}"
+        )))
+    })
 }
 
 pub fn build(ctx: &LibCtx) -> mlua::Result<Value> {
@@ -357,14 +399,28 @@ pub fn build(ctx: &LibCtx) -> mlua::Result<Value> {
     t.set(
         "write",
         lua.create_function(|_, args: Variadic<Value>| {
-            write_values(&mut std::io::stdout().lock(), &args)
+            write_values(&mut std::io::stdout().lock(), &args, false)
         })?,
     )?;
 
     t.set(
         "ewrite",
         lua.create_function(|_, args: Variadic<Value>| {
-            write_values(&mut std::io::stderr().lock(), &args)
+            write_values(&mut std::io::stderr().lock(), &args, false)
+        })?,
+    )?;
+
+    t.set(
+        "writeLine",
+        lua.create_function(|_, args: Variadic<Value>| {
+            write_values(&mut std::io::stdout().lock(), &args, true)
+        })?,
+    )?;
+
+    t.set(
+        "ewriteLine",
+        lua.create_function(|_, args: Variadic<Value>| {
+            write_values(&mut std::io::stderr().lock(), &args, true)
         })?,
     )?;
 
@@ -483,17 +539,100 @@ pub fn build(ctx: &LibCtx) -> mlua::Result<Value> {
 
     t.set(
         "color",
-        lua.create_function(|_, name: String| lookup(COLORS, "color", &name))?,
+        lua.create_function(|_, name: String| color_code(COLORS, "color", &name, 38))?,
     )?;
 
     t.set(
         "bgColor",
-        lua.create_function(|_, name: String| lookup(BG_COLORS, "background color", &name))?,
+        lua.create_function(|_, name: String| color_code(BG_COLORS, "background color", &name, 48))?,
+    )?;
+
+    t.set(
+        "rgb",
+        lua.create_function(|_, (r, g, b): (i64, i64, i64)| {
+            let (r, g, b) = (
+                clamp_channel("rgb", r)?,
+                clamp_channel("rgb", g)?,
+                clamp_channel("rgb", b)?,
+            );
+            Ok(format!("\u{1b}[38;2;{r};{g};{b}m"))
+        })?,
+    )?;
+
+    t.set(
+        "bgRgb",
+        lua.create_function(|_, (r, g, b): (i64, i64, i64)| {
+            let (r, g, b) = (
+                clamp_channel("bgRgb", r)?,
+                clamp_channel("bgRgb", g)?,
+                clamp_channel("bgRgb", b)?,
+            );
+            Ok(format!("\u{1b}[48;2;{r};{g};{b}m"))
+        })?,
     )?;
 
     t.set(
         "style",
         lua.create_function(|_, name: String| lookup(STYLES, "style", &name))?,
+    )?;
+
+    t.set(
+        "clear",
+        lua.create_function(|_, ()| {
+            let mut out = std::io::stdout().lock();
+            out.write_all(b"\x1b[2J\x1b[3J\x1b[H")
+                .map_err(mlua::Error::external)?;
+            out.flush().map_err(mlua::Error::external)
+        })?,
+    )?;
+
+    t.set(
+        "clearLine",
+        lua.create_function(|_, ()| {
+            let mut out = std::io::stdout().lock();
+            out.write_all(b"\r\x1b[2K").map_err(mlua::Error::external)?;
+            out.flush().map_err(mlua::Error::external)
+        })?,
+    )?;
+
+    t.set(
+        "transcribe",
+        lua.create_function(|lua, f: mlua::Function| {
+            let start = |lua: &mlua::Lua| -> mlua::Result<Option<Vec<u8>>> {
+                let cap = lua
+                    .app_data_ref::<crate::engine::PrintCapture>()
+                    .ok_or_else(|| LehuaError::msg("stdio.transcribe: print capture unavailable"))?;
+                let prev = cap.0.borrow_mut().replace(Vec::new());
+                Ok(prev)
+            };
+            let finish = |lua: &mlua::Lua, prev: Option<Vec<u8>>| -> (Vec<u8>, bool) {
+                let cap = lua.app_data_ref::<crate::engine::PrintCapture>();
+                match cap {
+                    Some(cap) => {
+                        let mut slot = cap.0.borrow_mut();
+                        let buf = std::mem::replace(&mut *slot, prev).unwrap_or_default();
+                        if let Some(outer) = slot.as_mut() {
+                            outer.extend_from_slice(&buf);
+                            (buf, true)
+                        } else {
+                            (buf, false)
+                        }
+                    }
+                    None => (Vec::new(), true),
+                }
+            };
+            let prev = start(lua)?;
+            let result = f.call::<mlua::MultiValue>(());
+            let (buf, nested) = finish(lua, prev);
+            result?;
+            if !nested {
+                let mut out = std::io::stdout().lock();
+                out.write_all(&buf).map_err(mlua::Error::external)?;
+                out.write_all(b"\n").map_err(mlua::Error::external)?;
+                out.flush().map_err(mlua::Error::external)?;
+            }
+            lua.create_string(&buf)
+        })?,
     )?;
 
     t.set(

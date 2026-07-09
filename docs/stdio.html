@@ -36,11 +36,12 @@
 <div class="codeblock"><pre><code class="language-luau">--#include[stdio]</code></pre></div>
 
 <h2>Writing</h2>
-<p><code>stdio.write(...)</code> prints its arguments to standard output. <code>stdio.ewrite(...)</code> does the same on standard error, the stream terminals set aside for warnings and error messages. Both accept any mix of strings, numbers, and booleans, join them with nothing in between, and add no newline at the end. Anything else, like a table or <code>nil</code>, raises a Lua error.</p>
-<p>Compare with <code>print</code>, which puts a tab between values and a newline at the end. With <code>write</code> you place every character yourself, which is exactly what you want for progress output and colored text.</p>
+<p><code>stdio.write(...)</code> prints its arguments to standard output. <code>stdio.ewrite(...)</code> does the same on standard error, the stream terminals set aside for warnings and error messages. Both accept any mix of strings, numbers, and booleans, join them with nothing in between, and add no newline at the end. Anything else, like a table or <code>nil</code>, raises a Lua error. <code>stdio.writeLine(...)</code> and <code>stdio.ewriteLine(...)</code> are the same but finish with a newline.</p>
+<p>Compare with <code>print</code>, which puts a space between values and a newline at the end. With <code>write</code> you place every character yourself, which is exactly what you want for progress output and colored text.</p>
+<p>Two helpers tidy the screen: <code>stdio.clear()</code> wipes the whole terminal and moves the cursor to the top left, and <code>stdio.clearLine()</code> erases the current line and returns the cursor to its start, which is handy for progress counters that redraw in place.</p>
 
 <h2>How print shows values</h2>
-<p>Lehua's <code>print</code> is made for looking at data. Tables are printed with their whole content: list items first, then named keys in alphabetical order, indented one level per depth. Nested tables print nested; tables that contain themselves and tables deeper than six levels print as <code>{...}</code> instead of running forever. Library objects like a DateTime, a Regex, or a MongoCluster print as their name in square brackets, in bold blue when the output is a real terminal: <span style="color:#3b82f6;font-weight:bold">[MongoCluster]</span>. When output is piped to a file the colors are left out automatically.</p>
+<p>Lehua's <code>print</code> is made for looking at data. Tables are printed with their whole content: list items first, then named keys in alphabetical order, indented one level per depth. Nested tables print nested; tables that contain themselves and tables deeper than six levels print as <code>{...}</code> instead of running forever. A table with a <code>__tostring</code> metamethod prints whatever that returns instead of its content. Library objects like a DateTime, a Regex, or a MongoCluster print as their name in square brackets, in bold blue when the output is a real terminal: <span style="color:#3b82f6;font-weight:bold">[MongoCluster]</span>. In a terminal the rest is colored by type too: keys cyan, numbers yellow, booleans blue, <code>nil</code> gray, functions magenta. When output is piped to a file the colors are left out automatically.</p>
 <div class="codeblock"><div class="window-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="window-title">src/main.luau</span></div><pre><code class="language-luau">--#include[datetime]
 
 print({ 3, 1, name = "ada", nested = { on = true } })
@@ -124,9 +125,11 @@ end</code></pre></div>
 <tbody>
 <tr><td>Normal</td><td><code>black</code>, <code>red</code>, <code>green</code>, <code>yellow</code>, <code>blue</code>, <code>magenta</code>, <code>cyan</code>, <code>white</code></td></tr>
 <tr><td>Bright</td><td><code>brightBlack</code>, <code>brightRed</code>, <code>brightGreen</code>, <code>brightYellow</code>, <code>brightBlue</code>, <code>brightMagenta</code>, <code>brightCyan</code>, <code>brightWhite</code></td></tr>
+<tr><td>Hex</td><td>Any hex code like <code>#ff8800</code> or the short form <code>#f80</code> picks an exact color on terminals with truecolor support.</td></tr>
 <tr><td>Special</td><td><code>reset</code> switches back to the default color: the text color in <code>color</code>, the background in <code>bgColor</code>.</td></tr>
 </tbody>
 </table>
+<p><code>stdio.rgb(r, g, b)</code> and <code>stdio.bgRgb(r, g, b)</code> do the same as a hex code but take the three channels as numbers from 0 to 255.</p>
 <p><code>style</code> changes how the text is drawn rather than its color:</p>
 <table>
 <thead><tr><th>Name</th><th>Effect</th></tr></thead>
@@ -154,6 +157,18 @@ else
     stdio.write("ok all tests passed\n")
 end</code></pre></div>
 <div class="note"><div class="note-title">Where colors work</div><p>Escape codes render in modern terminals: Windows Terminal, the macOS Terminal, and just about every Linux terminal. When output goes to a file or another program, the codes are written out as literal characters instead. Check <code>stdio.isTTY()</code> before coloring, or clean the text up afterwards with <code>stripColors</code>.</p></div>
+
+<h2>Transcribing prints</h2>
+<p><code>stdio.transcribe(fn)</code> runs the function you pass it, and while it runs, every <code>print</code> call is cached instead of written. When the function returns, everything it printed comes out together as one line. That makes it easy to build a line piece by piece, mixing colors and styles programmatically, without juggling one giant concatenation yourself. The combined line is also returned as a string.</p>
+<div class="codeblock"><div class="window-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="window-title">src/main.luau</span></div><pre><code class="language-luau">--#include[stdio]
+
+local line = stdio.transcribe(function()
+    print(stdio.color("brightBlack") .. "[" .. os.date("!%Y-%m-%dT%H:%M:%SZ") .. "]" .. stdio.color("reset"))
+    print(" " .. stdio.color("cyan") .. "[EVENT]" .. stdio.color("reset"))
+    print(" - Event named start fired")
+end)
+-- [2026-07-08T19:04:05Z] [EVENT] - Event named start fired</code></pre></div>
+<p>Nothing is printed if the function raises an error; the error travels on as usual. Nested <code>transcribe</code> calls fold their output into the surrounding one.</p>
 
 <h2>Stripping colors</h2>
 <p><code>stdio.stripColors(text)</code> returns the text with every ANSI escape sequence removed. Handy for writing colored output to a log file, or for measuring how wide a string will actually look on screen.</p>

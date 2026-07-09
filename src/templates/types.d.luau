@@ -213,14 +213,21 @@ export type StdioStream = "stdin" | "stdout" | "stderr"
 export type Stdio = {
     write: (...(string | number | boolean)) -> (),
     ewrite: (...(string | number | boolean)) -> (),
+    writeLine: (...(string | number | boolean)) -> (),
+    ewriteLine: (...(string | number | boolean)) -> (),
     readLine: () -> string?,
     readAll: () -> string,
     prompt: (message: string?, options: { string }?) -> (string?, number?),
     isTTY: (stream: StdioStream?) -> boolean,
-    color: (name: StdioColor) -> string,
-    bgColor: (name: StdioColor) -> string,
+    color: (name: StdioColor | string) -> string,
+    bgColor: (name: StdioColor | string) -> string,
+    rgb: (r: number, g: number, b: number) -> string,
+    bgRgb: (r: number, g: number, b: number) -> string,
     style: (name: StdioStyle) -> string,
     stripColors: (text: string) -> string,
+    clear: () -> (),
+    clearLine: () -> (),
+    transcribe: (fn: () -> ()) -> string,
 }
 
 export type LuauLoadOptions = {

@@ -138,17 +138,27 @@ pub fn make_vm(engine: Arc<Engine>) -> Result<(Lua, Rc<VmContext>)> {
 
 const PRINT_MAX_DEPTH: usize = 6;
 
+#[derive(Default)]
+pub struct PrintCapture(pub RefCell<Option<Vec<u8>>>);
+
 fn install_pretty_print(lua: &Lua) -> mlua::Result<()> {
+    lua.set_app_data(PrintCapture::default());
     let tostring: Function = lua.globals().get("tostring")?;
-    let print_fn = lua.create_function(move |_, args: MultiValue| {
+    let print_fn = lua.create_function(move |lua, args: MultiValue| {
         use std::io::{IsTerminal, Write};
         let style = std::io::stdout().is_terminal();
         let mut out: Vec<u8> = Vec::new();
         for (i, v) in args.iter().enumerate() {
             if i > 0 {
-                out.push(b'\t');
+                out.push(b' ');
             }
             format_value(&tostring, v, &mut out, 0, &mut Vec::new(), style)?;
+        }
+        if let Some(cap) = lua.app_data_ref::<PrintCapture>() {
+            if let Some(buf) = cap.0.borrow_mut().as_mut() {
+                buf.extend_from_slice(&out);
+                return Ok(());
+            }
         }
         out.push(b'\n');
         let mut stdout = std::io::stdout().lock();
