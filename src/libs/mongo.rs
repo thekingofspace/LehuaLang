@@ -237,16 +237,116 @@ fn docs_to_array(lua: &Lua, docs: Vec<Document>) -> mlua::Result<Table> {
     Ok(out)
 }
 
-struct LuaMongoClient {
+pub(crate) struct LuaMongoClient {
     client: Client,
+    uri: String,
 }
 
-struct LuaMongoDatabase {
+pub(crate) struct LuaMongoDatabase {
     db: Database,
+    uri: String,
 }
 
-struct LuaMongoCollection {
+pub(crate) struct LuaMongoCollection {
     coll: Collection<Document>,
+    uri: String,
+}
+
+#[derive(Clone)]
+pub(crate) enum MongoRef {
+    Client { uri: String },
+    Database { uri: String, db: String },
+    Collection { uri: String, db: String, coll: String },
+    ObjectId { hex: String },
+}
+
+impl MongoRef {
+    pub(crate) fn key_parts(&self) -> Vec<&str> {
+        match self {
+            MongoRef::Client { uri } => vec!["client", uri],
+            MongoRef::Database { uri, db } => vec!["database", uri, db],
+            MongoRef::Collection { uri, db, coll } => vec!["collection", uri, db, coll],
+            MongoRef::ObjectId { hex } => vec!["objectId", hex],
+        }
+    }
+}
+
+pub(crate) fn to_ref(ud: &mlua::AnyUserData) -> Option<MongoRef> {
+    if let Ok(c) = ud.borrow::<LuaMongoClient>() {
+        return Some(MongoRef::Client { uri: c.uri.clone() });
+    }
+    if let Ok(d) = ud.borrow::<LuaMongoDatabase>() {
+        return Some(MongoRef::Database {
+            uri: d.uri.clone(),
+            db: d.db.name().to_string(),
+        });
+    }
+    if let Ok(c) = ud.borrow::<LuaMongoCollection>() {
+        let ns = c.coll.namespace();
+        return Some(MongoRef::Collection {
+            uri: c.uri.clone(),
+            db: ns.db.clone(),
+            coll: ns.coll.clone(),
+        });
+    }
+    if let Ok(o) = ud.borrow::<LuaObjectId>() {
+        return Some(MongoRef::ObjectId {
+            hex: o.id.to_hex(),
+        });
+    }
+    None
+}
+
+#[derive(Default)]
+struct SharedClients(std::cell::RefCell<std::collections::HashMap<String, Client>>);
+
+async fn client_for(lua: &Lua, uri: &str) -> mlua::Result<Client> {
+    let cached = lua
+        .app_data_ref::<SharedClients>()
+        .and_then(|c| c.0.borrow().get(uri).cloned());
+    if let Some(c) = cached {
+        return Ok(c);
+    }
+    let options = ClientOptions::parse(uri).await.map_err(mongo_err)?;
+    let client = Client::with_options(options).map_err(mongo_err)?;
+    match lua.app_data_ref::<SharedClients>() {
+        Some(shared) => {
+            shared.0.borrow_mut().insert(uri.to_string(), client.clone());
+        }
+        None => {
+            let shared = SharedClients::default();
+            shared.0.borrow_mut().insert(uri.to_string(), client.clone());
+            lua.set_app_data(shared);
+        }
+    }
+    Ok(client)
+}
+
+pub(crate) async fn from_ref(lua: &Lua, r: MongoRef) -> mlua::Result<Value> {
+    Ok(match r {
+        MongoRef::Client { uri } => {
+            let client = client_for(lua, &uri).await?;
+            Value::UserData(lua.create_userdata(LuaMongoClient { client, uri })?)
+        }
+        MongoRef::Database { uri, db } => {
+            let client = client_for(lua, &uri).await?;
+            Value::UserData(lua.create_userdata(LuaMongoDatabase {
+                db: client.database(&db),
+                uri,
+            })?)
+        }
+        MongoRef::Collection { uri, db, coll } => {
+            let client = client_for(lua, &uri).await?;
+            Value::UserData(lua.create_userdata(LuaMongoCollection {
+                coll: client.database(&db).collection::<Document>(&coll),
+                uri,
+            })?)
+        }
+        MongoRef::ObjectId { hex } => {
+            let id = ObjectId::parse_str(&hex).map_err(mongo_err)?;
+            Value::UserData(lua.create_userdata(LuaObjectId { id })?)
+        }
+    })
 }
 
 impl UserData for LuaMongoClient {
@@ -254,14 +354,16 @@ impl UserData for LuaMongoClient {
         m.add_method("database", |lua, this, name: String| {
             lua.create_userdata(LuaMongoDatabase {
                 db: this.client.database(&name),
+                uri: this.uri.clone(),
             })
         });
 
         m.add_method("defaultDatabase", |lua, this, ()| {
             match this.client.default_database() {
-                Some(db) => Ok(Value::UserData(
-                    lua.create_userdata(LuaMongoDatabase { db })?,
-                )),
+                Some(db) => Ok(Value::UserData(lua.create_userdata(LuaMongoDatabase {
+                    db,
+                    uri: this.uri.clone(),
+                })?)),
                 None => Ok(Value::Nil),
             }
         });
@@ -290,6 +392,7 @@ impl UserData for LuaMongoDatabase {
         m.add_method("collection", |lua, this, name: String| {
             lua.create_userdata(LuaMongoCollection {
                 coll: this.db.collection::<Document>(&name),
+                uri: this.uri.clone(),
             })
         });
 
@@ -661,7 +764,7 @@ pub fn build(ctx: &LibCtx) -> mlua::Result<Value> {
                 }
             }
             let client = Client::with_options(options).map_err(mongo_err)?;
-            Ok(LuaMongoClient { client })
+            Ok(LuaMongoClient { client, uri })
         })?,
     )?;
 

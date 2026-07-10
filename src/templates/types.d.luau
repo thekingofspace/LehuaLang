@@ -8,6 +8,19 @@ export type Port = {
     IsClosed: (self: Port) -> boolean,
 }
 
+export type Subscription = {
+    Unsubscribe: (self: Subscription) -> boolean,
+    Topic: (self: Subscription) -> string,
+    IsActive: (self: Subscription) -> boolean,
+}
+
+export type Messenger = {
+    Publish: (self: Messenger, topic: string, ...any) -> number,
+    Subscribe: (self: Messenger, topic: string, callback: (...any) -> ()) -> Subscription,
+    Once: (self: Messenger, topic: string, callback: (...any) -> ()) -> Subscription,
+    Subscribers: (self: Messenger, topic: string) -> number,
+}
+
 export type Metadata = {
     type: "file" | "dir" | "other",
     size: number,
@@ -907,11 +920,53 @@ export type TaskLib = {
     cancel: (target: Task | thread) -> (),
 }
 
+export type MemCache = {
+    set: (self: MemCache, key: string, value: any, ttl: number?) -> (),
+    get: (self: MemCache, key: string) -> any,
+    take: (self: MemCache, key: string) -> any,
+    add: (self: MemCache, key: string, value: any, ttl: number?) -> boolean,
+    increment: (self: MemCache, key: string, delta: number?, ttl: number?) -> number,
+    has: (self: MemCache, key: string) -> boolean,
+    delete: (self: MemCache, key: string) -> boolean,
+    ttl: (self: MemCache, key: string) -> number?,
+    touch: (self: MemCache, key: string, ttl: number?) -> boolean,
+    keys: (self: MemCache) -> { string },
+    count: (self: MemCache) -> number,
+    clear: (self: MemCache) -> (),
+    name: (self: MemCache) -> string,
+    stats: (self: MemCache) -> { hits: number, misses: number, count: number },
+}
+
+export type LruCache = {
+    set: (self: LruCache, key: string, value: any, ttl: number?) -> (),
+    get: (self: LruCache, key: string) -> any,
+    peek: (self: LruCache, key: string) -> any,
+    has: (self: LruCache, key: string) -> boolean,
+    delete: (self: LruCache, key: string) -> boolean,
+    keys: (self: LruCache) -> { string },
+    count: (self: LruCache) -> number,
+    capacity: (self: LruCache) -> number,
+    clear: (self: LruCache) -> (),
+}
+
+export type MemCacheOptions = {
+    ttl: number?,
+}
+
+export type CacheLib = {
+    mem: ((name: string?, options: MemCacheOptions?) -> MemCache) & ((options: MemCacheOptions) -> MemCache),
+    lru: (capacity: number, options: MemCacheOptions?) -> LruCache,
+    memoize: (callback: (...any) -> ...any, options: { ttl: number?, capacity: number? }?) -> (...any) -> ...any,
+    list: () -> { string },
+    drop: (name: string) -> boolean,
+}
+
 declare function parallel(path: string, ...: any): Port
 
 declare __dirname: string
 declare __filename: string
 declare channel: Port
+declare messenger: Messenger
 declare fs: FS
 declare process: Process
 declare serde: Serde
@@ -929,4 +984,5 @@ declare net: Net
 declare random: RandomLib
 declare task: TaskLib
 declare canvas: CanvasLib
+declare cache: CacheLib
 declare dll: DllLib

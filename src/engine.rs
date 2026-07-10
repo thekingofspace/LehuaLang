@@ -343,6 +343,7 @@ pub fn make_vm(engine: Arc<Engine>) -> Result<(Lua, Rc<VmContext>)> {
     lua.set_app_data(ctx.loading.clone());
     let control = ThreadControl::of(&lua);
     install_resume_hook(&lua, control, ctx.sched.clone())?;
+    crate::messenger::install(&lua, ctx.sched.clone())?;
     Ok((lua, ctx))
 }
 

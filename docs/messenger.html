@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Messenger · Lehua</title>
+<meta name="description" content="Messenger. Lehua is a standalone Luau runtime that compiles to a single executable.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='6' fill='%23d94a3d'/%3E%3Cg fill='%23e5675b'%3E%3Cellipse cx='16' cy='6' rx='3.4' ry='5'/%3E%3Cellipse cx='16' cy='26' rx='3.4' ry='5'/%3E%3Cellipse cx='6' cy='16' rx='5' ry='3.4'/%3E%3Cellipse cx='26' cy='16' rx='5' ry='3.4'/%3E%3C/g%3E%3Ccircle cx='16' cy='16' r='3' fill='%23ffd24d'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="assets/styles.css">
+<script>(function(){try{var t=localStorage.getItem('lehua-theme');if(!t)t=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light';document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="navbar">
+  <button id="menu-btn" class="icon-btn" aria-label="Open menu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16" stroke-linecap="round"/></svg></button>
+  <a class="brand" href="index.html"><svg viewBox="0 0 32 32"><circle cx="16" cy="16" r="6" fill="#d94a3d"/><g fill="#e5675b"><ellipse cx="16" cy="6" rx="3.4" ry="5"/><ellipse cx="16" cy="26" rx="3.4" ry="5"/><ellipse cx="6" cy="16" rx="5" ry="3.4"/><ellipse cx="26" cy="16" rx="5" ry="3.4"/></g><circle cx="16" cy="16" r="3" fill="#ffd24d"/></svg> Lehua</a>
+  <div class="nav-spacer"></div>
+  <nav class="nav-links">
+    <a class="docs" href="introduction.html">Docs</a>
+    <a class="gh" href="https://github.com/thekingofspace/LehuaLang"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.58 2 12.25c0 4.53 2.87 8.37 6.84 9.73.5.1.68-.22.68-.49v-1.7c-2.78.62-3.37-1.22-3.37-1.22-.45-1.18-1.11-1.5-1.11-1.5-.91-.64.07-.62.07-.62 1 .07 1.53 1.06 1.53 1.06.9 1.58 2.36 1.12 2.94.86.09-.67.35-1.12.63-1.38-2.22-.26-4.56-1.14-4.56-5.07 0-1.12.39-2.03 1.03-2.75-.1-.26-.45-1.3.1-2.71 0 0 .84-.28 2.75 1.05a9.3 9.3 0 015 0c1.91-1.33 2.75-1.05 2.75-1.05.55 1.41.2 2.45.1 2.71.64.72 1.03 1.63 1.03 2.75 0 3.94-2.34 4.81-4.57 5.06.36.32.68.94.68 1.9v2.82c0 .27.18.6.69.49A10.02 10.02 0 0022 12.25C22 6.58 17.52 2 12 2z"/></svg> GitHub</a>
+  </nav>
+  <button id="theme-btn" class="icon-btn" aria-label="Toggle theme"><svg id="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z" stroke-linejoin="round"/></svg><svg id="icon-sun" style="display:none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.4 1.4M17.6 17.6L19 19M19 5l-1.4 1.4M6.4 17.6L5 19" stroke-linecap="round"/></svg></button>
+</header>
+<div class="backdrop" id="backdrop"></div>
+<div class="layout">
+  <aside class="sidebar" id="sidebar">
+    <label class="side-search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3" stroke-linecap="round"/></svg><input id="side-search" type="text" placeholder="Search docs" aria-label="Search the docs"><kbd>Ctrl K</kbd></label>
+    <nav id="side-nav" class="side-nav"></nav>
+  </aside>
+  <main class="content">
+    <article class="doc-page">
+      <p class="eyebrow">Guides</p>
+      <h1>Messenger</h1>
+      <p class="lead">Every Lehua program has a global called <code>messenger</code>: a broadcast system that reaches across threads. Publish a topic with some values, and every subscriber to that topic runs its callback, wherever it lives. No include header needed - it is always there, in the main thread and in every <a href="parallel.html">parallel</a> worker.</p>
+
+      <h2>Publish and subscribe</h2>
+      <p>A <a href="parallel.html">Port</a> is a pipe between exactly two threads, where one side pushes and the other side pops. The messenger is different: there is no queue to drain and no pairing. Publishing is fire and forget - whoever is subscribed at that moment gets a copy, and nobody subscribed means the message simply evaporates.</p>
+      <table>
+      <thead><tr><th>Method</th><th>Returns</th><th>Description</th></tr></thead>
+      <tbody>
+      <tr><td><code>messenger:Publish(topic, ...)</code></td><td><code>number</code></td><td>Sends the values to every subscriber of <code>topic</code> in the whole program, including this thread. Returns how many subscribers were reached.</td></tr>
+      <tr><td><code>messenger:Subscribe(topic, callback)</code></td><td><code>Subscription</code></td><td>Runs <code>callback(...)</code> for every publish to <code>topic</code>, from any thread.</td></tr>
+      <tr><td><code>messenger:Once(topic, callback)</code></td><td><code>Subscription</code></td><td>Like <code>Subscribe</code>, but the subscription removes itself after the first delivery.</td></tr>
+      <tr><td><code>messenger:Subscribers(topic)</code></td><td><code>number</code></td><td>How many live subscriptions the topic has across all threads.</td></tr>
+      </tbody>
+      </table>
+      <p>A <code>Subscription</code> has <code>Unsubscribe()</code>, <code>Topic()</code>, and <code>IsActive()</code>.</p>
+
+      <h2>Callbacks run at home</h2>
+      <p>When an event arrives, the callback runs in a fresh coroutine on the thread that subscribed, never on the publisher's thread. It can yield, use <code>task.wait</code>, do network calls, or publish again. Values travel like Port values: nil, booleans, numbers, strings, and plain tables, copied not shared. A <a href="cache.html">mem cache</a> handle also crosses, which is the door to sharing bigger state.</p>
+      <div class="codeblock"><div class="window-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="window-title">src/main.luau</span></div><pre><code class="language-luau">parallel("@self/shard.luau", 1)
+parallel("@self/shard.luau", 2)
+
+local done = 0
+local sub
+sub = messenger:Subscribe("shard-ready", function(id)
+    done += 1
+    print("shard " .. id .. " is ready")
+    if done == 2 then
+        messenger:Publish("announce", "all shards up")
+        sub:Unsubscribe()
+    end
+end)</code></pre></div>
+      <div class="codeblock"><div class="window-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="window-title">src/shard.luau</span></div><pre><code class="language-luau">local id = ...
+
+messenger:Once("announce", function(text)
+    print("shard " .. id .. " heard: " .. text)
+end)
+
+messenger:Publish("shard-ready", id)</code></pre></div>
+
+      <h2>Lifetime</h2>
+      <p>A live subscription keeps its thread alive, the same way a bound heartbeat does: the program will not exit while something is still listening. Call <code>Unsubscribe()</code> when a subscription's work is done. Errors inside a callback are printed and do not affect the publisher or other subscribers.</p>
+      <div class="note"><div class="note-title">Serial too</div><p>Subscribing is not just for workers. The main thread can subscribe to its own topics, and a publish from the main thread reaches its own subscriptions as well - the callback still runs in its own coroutine, shortly after the publish returns.</p></div>
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer>Lehua is built in Rust on mlua and tokio. Made for people who love Luau.</footer>
+<script src="assets/site.js" defer></script>
+</body>
+</html>

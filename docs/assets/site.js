@@ -23,6 +23,7 @@
       { t: "Roots", h: "roots.html" },
       { t: "Including libraries", h: "libraries.html" },
       { t: "Parallel", h: "parallel.html" },
+      { t: "Messenger", h: "messenger.html" },
       { t: "Native DLLs", h: "dll.html" },
       { t: "Building a program", h: "building.html" }
     ]},
@@ -43,7 +44,8 @@
       { t: "net", h: "net.html" },
       { t: "canvas", h: "canvas.html" },
       { t: "random", h: "random.html" },
-      { t: "task", h: "task.html" }
+      { t: "task", h: "task.html" },
+      { t: "cache", h: "cache.html" }
     ]},
     { title: "Reference", icon: ICON.terminal, items: [
       { t: "CLI", h: "cli.html" },
@@ -201,7 +203,7 @@
 
   // ---- Syntax highlighting ----
   var LUAU_KW = "local function end if then else elseif for in do while repeat until return break continue and or not nil true false type export".split(" ");
-  var LUAU_GLOBAL = "require parallel channel __dirname __filename fs process serde cryptography datetime regex stdio luau url semver archive sqlite mongo net random task canvas dll buffer print assert pcall error tostring tonumber pairs ipairs select".split(" ");
+  var LUAU_GLOBAL = "require parallel channel messenger __dirname __filename fs process serde cryptography datetime regex stdio luau url semver archive sqlite mongo net random task canvas cache dll buffer print assert pcall error tostring tonumber pairs ipairs select".split(" ");
   var kw = {}, gl = {};
   LUAU_KW.forEach(function (w) { kw[w] = 1; });
   LUAU_GLOBAL.forEach(function (w) { gl[w] = 1; });

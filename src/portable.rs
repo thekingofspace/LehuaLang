@@ -15,6 +15,8 @@ pub enum PortableValue {
     Str(Vec<u8>),
     Array(Vec<PortableValue>),
     Map(Vec<(PortableValue, PortableValue)>),
+    #[cfg(feature = "lib-cache")]
+    MemCache(String),
 }
 
 impl PortableValue {
@@ -69,6 +71,12 @@ impl PortableValue {
             }
             Value::Function(_) => return Err(LehuaError::NotPortable("function")),
             Value::Thread(_) => return Err(LehuaError::NotPortable("thread")),
+            #[cfg(feature = "lib-cache")]
+            Value::UserData(ud) => match crate::libs::cache::memcache_name(ud) {
+                Some(name) => PortableValue::MemCache(name),
+                None => return Err(LehuaError::NotPortable("userdata")),
+            },
+            #[cfg(not(feature = "lib-cache"))]
             Value::UserData(_) => return Err(LehuaError::NotPortable("userdata")),
             Value::LightUserData(_) => return Err(LehuaError::NotPortable("lightuserdata")),
             Value::Buffer(_) => return Err(LehuaError::NotPortable("buffer")),
@@ -102,6 +110,8 @@ impl PortableValue {
                 }
                 Value::Table(t)
             }
+            #[cfg(feature = "lib-cache")]
+            PortableValue::MemCache(name) => crate::libs::cache::memcache_value(lua, &name)?,
         })
     }
 
@@ -121,6 +131,8 @@ impl PortableValue {
                 }
                 J::Object(obj)
             }
+            #[cfg(feature = "lib-cache")]
+            PortableValue::MemCache(name) => J::String(format!("MemCache({name})")),
         }
     }
 

@@ -10,12 +10,34 @@ use super::datetime::{instant_arg, Instant};
 use super::{LibCtx, PathScope};
 use crate::error::LehuaError;
 
-struct LuaSqlite {
+pub(crate) struct LuaSqlite {
     conn: RefCell<Option<Connection>>,
     path: String,
 }
 
 impl LuaSqlite {
+    pub(crate) fn share_path(&self) -> Option<String> {
+        if self.conn.borrow().is_none() {
+            return None;
+        }
+        if self.path == ":memory:"
+            || self.path.contains(":memory:")
+            || self.path.contains("mode=memory")
+        {
+            return None;
+        }
+        Some(self.path.clone())
+    }
+
+    pub(crate) fn reopen(path: &str) -> mlua::Result<LuaSqlite> {
+        let conn = Connection::open(path)
+            .map_err(|e| LehuaError::msg(format!("sqlite: could not open: {e}")))?;
+        Ok(LuaSqlite {
+            conn: RefCell::new(Some(conn)),
+            path: path.to_string(),
+        })
+    }
+
     fn with_conn<T>(&self, f: impl FnOnce(&Connection) -> mlua::Result<T>) -> mlua::Result<T> {
         let guard = self.conn.borrow();
         let conn = guard

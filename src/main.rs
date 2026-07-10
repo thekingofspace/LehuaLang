@@ -6,6 +6,7 @@ mod error;
 mod headers;
 mod libs;
 mod manifest;
+mod messenger;
 mod parallel;
 mod portable;
 mod provider;

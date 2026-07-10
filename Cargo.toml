@@ -1,6 +1,6 @@
 [package]
 name = "lehua"
-version = "0.2.12"
+version = "0.2.13"
 edition = "2021"
 rust-version = "1.80"
 description = "Lehua - the next-generation Luau runtime: compiled, multithreaded, batteries-included."
@@ -30,6 +30,7 @@ full = [
     "lib-random",
     "lib-task",
     "lib-canvas",
+    "lib-cache",
 ]
 lib-fs = ["dep:glob", "dep:getrandom"]
 lib-process = ["dep:sysinfo"]
@@ -58,6 +59,7 @@ lib-mongo = ["dep:mongodb", "dep:futures-util", "dep:rustls", "lib-datetime"]
 lib-random = ["dep:getrandom"]
 lib-task = []
 lib-canvas = ["dep:image", "dep:imageproc", "dep:ab_glyph", "dep:getrandom"]
+lib-cache = []
 lib-net = [
     "dep:reqwest",
     "dep:tokio-tungstenite",

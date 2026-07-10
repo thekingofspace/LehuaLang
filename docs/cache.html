@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The cache library · Lehua</title>
+<meta name="description" content="The cache library. Lehua is a standalone Luau runtime that compiles to a single executable.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='6' fill='%23d94a3d'/%3E%3Cg fill='%23e5675b'%3E%3Cellipse cx='16' cy='6' rx='3.4' ry='5'/%3E%3Cellipse cx='16' cy='26' rx='3.4' ry='5'/%3E%3Cellipse cx='6' cy='16' rx='5' ry='3.4'/%3E%3Cellipse cx='26' cy='16' rx='5' ry='3.4'/%3E%3C/g%3E%3Ccircle cx='16' cy='16' r='3' fill='%23ffd24d'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="assets/styles.css">
+<script>(function(){try{var t=localStorage.getItem('lehua-theme');if(!t)t=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light';document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="navbar">
+  <button id="menu-btn" class="icon-btn" aria-label="Open menu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16" stroke-linecap="round"/></svg></button>
+  <a class="brand" href="index.html"><svg viewBox="0 0 32 32"><circle cx="16" cy="16" r="6" fill="#d94a3d"/><g fill="#e5675b"><ellipse cx="16" cy="6" rx="3.4" ry="5"/><ellipse cx="16" cy="26" rx="3.4" ry="5"/><ellipse cx="6" cy="16" rx="5" ry="3.4"/><ellipse cx="26" cy="16" rx="5" ry="3.4"/></g><circle cx="16" cy="16" r="3" fill="#ffd24d"/></svg> Lehua</a>
+  <div class="nav-spacer"></div>
+  <nav class="nav-links">
+    <a class="docs" href="introduction.html">Docs</a>
+    <a class="gh" href="https://github.com/thekingofspace/LehuaLang"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.58 2 12.25c0 4.53 2.87 8.37 6.84 9.73.5.1.68-.22.68-.49v-1.7c-2.78.62-3.37-1.22-3.37-1.22-.45-1.18-1.11-1.5-1.11-1.5-.91-.64.07-.62.07-.62 1 .07 1.53 1.06 1.53 1.06.9 1.58 2.36 1.12 2.94.86.09-.67.35-1.12.63-1.38-2.22-.26-4.56-1.14-4.56-5.07 0-1.12.39-2.03 1.03-2.75-.1-.26-.45-1.3.1-2.71 0 0 .84-.28 2.75 1.05a9.3 9.3 0 015 0c1.91-1.33 2.75-1.05 2.75-1.05.55 1.41.2 2.45.1 2.71.64.72 1.03 1.63 1.03 2.75 0 3.94-2.34 4.81-4.57 5.06.36.32.68.94.68 1.9v2.82c0 .27.18.6.69.49A10.02 10.02 0 0022 12.25C22 6.58 17.52 2 12 2z"/></svg> GitHub</a>
+  </nav>
+  <button id="theme-btn" class="icon-btn" aria-label="Toggle theme"><svg id="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z" stroke-linejoin="round"/></svg><svg id="icon-sun" style="display:none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.4 1.4M17.6 17.6L19 19M19 5l-1.4 1.4M6.4 17.6L5 19" stroke-linecap="round"/></svg></button>
+</header>
+<div class="backdrop" id="backdrop"></div>
+<div class="layout">
+  <aside class="sidebar" id="sidebar">
+    <label class="side-search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3" stroke-linecap="round"/></svg><input id="side-search" type="text" placeholder="Search docs" aria-label="Search the docs"><kbd>Ctrl K</kbd></label>
+    <nav id="side-nav" class="side-nav"></nav>
+  </aside>
+  <main class="content">
+    <article class="doc-page">
+<p class="eyebrow">Library Reference</p>
+<h1>The cache library</h1>
+<p class="lead">Fast in-process caches with <code>cache</code>. Mem caches live once per program and are visible from every <a href="parallel.html">parallel</a> thread, with per-entry time to live, atomic counters, and rich value support. Local LRU caches and memoization round it out.</p>
+
+<h2>Including cache</h2>
+<div class="codeblock"><pre><code class="language-luau">--#include[cache]</code></pre></div>
+
+<h2>Mem caches</h2>
+<p>A mem cache is a named key-value store that exists once for the whole program. Every thread that opens the same name gets the same data: a value set on one thread is immediately readable from all the others, and an update made anywhere is what everyone sees next. Values are copied in and out, never shared, so there is nothing to lock in your own code.</p>
+<table>
+<thead><tr><th>Function</th><th>Returns</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>cache.mem(name?, options?)</code></td><td><code>MemCache</code></td><td>Opens the mem cache called <code>name</code>, creating it if needed. Without a name you get a fresh anonymous cache. <code>options.ttl</code> sets a default time to live in seconds for new entries.</td></tr>
+<tr><td><code>cache.list()</code></td><td><code>{ string }</code></td><td>Names of every mem cache in the program.</td></tr>
+<tr><td><code>cache.drop(name)</code></td><td><code>boolean</code></td><td>Empties the named cache and removes it from the registry. Handles that are still open keep working but become detached from future <code>cache.mem(name)</code> calls.</td></tr>
+</tbody>
+</table>
+<div class="codeblock"><div class="window-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="window-title">src/main.luau</span></div><pre><code class="language-luau">--#include[cache]
+
+local sessions = cache.mem("sessions", { ttl = 60 })
+
+sessions:set("user:1", { name = "Kai", level = 3 })
+print(sessions:get("user:1").name) -- Kai
+print(sessions:ttl("user:1")) -- just under 60
+
+sessions:set("token", "abc123", 5) -- overrides the default ttl
+sessions:increment("visits") -- atomic, starts at 0</code></pre></div>
+
+<h2>The MemCache object</h2>
+<table>
+<thead><tr><th>Method</th><th>Returns</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>c:set(key, value, ttl?)</code></td><td><code>()</code></td><td>Stores a copy of <code>value</code>. <code>ttl</code> is seconds until the entry expires; leave it out to use the cache default, or pass 0 to keep the entry forever.</td></tr>
+<tr><td><code>c:get(key)</code></td><td><code>any</code></td><td>A fresh copy of the stored value, or nil if missing or expired. Yields only when a value needs to reconnect, like a mongo handle.</td></tr>
+<tr><td><code>c:take(key)</code></td><td><code>any</code></td><td>Like <code>get</code> but also removes the entry.</td></tr>
+<tr><td><code>c:add(key, value, ttl?)</code></td><td><code>boolean</code></td><td>Stores only when the key is absent or expired. True when it stored. This is the building block for cross-thread locks and once-only work.</td></tr>
+<tr><td><code>c:increment(key, delta?, ttl?)</code></td><td><code>number</code></td><td>Atomically adds <code>delta</code> (default 1) to a numeric entry, creating it at 0 first. Returns the new value.</td></tr>
+<tr><td><code>c:has(key)</code></td><td><code>boolean</code></td><td>True when the key holds a live entry.</td></tr>
+<tr><td><code>c:delete(key)</code></td><td><code>boolean</code></td><td>Removes the entry. True when a live entry was removed.</td></tr>
+<tr><td><code>c:ttl(key)</code></td><td><code>number?</code></td><td>Seconds left before the entry expires, <code>math.huge</code> for entries that never expire, or nil when missing.</td></tr>
+<tr><td><code>c:touch(key, ttl?)</code></td><td><code>boolean</code></td><td>Resets the entry's time to live without changing its value.</td></tr>
+<tr><td><code>c:keys()</code></td><td><code>{ string }</code></td><td>Sorted list of live keys.</td></tr>
+<tr><td><code>c:count()</code></td><td><code>number</code></td><td>Number of live entries. <code>#c</code> works too.</td></tr>
+<tr><td><code>c:clear()</code></td><td><code>()</code></td><td>Removes everything.</td></tr>
+<tr><td><code>c:name()</code></td><td><code>string</code></td><td>The cache's registry name.</td></tr>
+<tr><td><code>c:stats()</code></td><td><code>table</code></td><td><code>{ hits, misses, count }</code> for this cache since the program started.</td></tr>
+</tbody>
+</table>
+
+<h2>Sharing across parallel threads</h2>
+<p>Mem caches are the shared memory of Lehua's threading story. Open the same name on both sides, or simply pass the handle itself to <code>parallel(...)</code>, through a Port, or in a <a href="messenger.html">messenger</a> publish - a mem cache handle is one of the few objects that crosses threads.</p>
+<div class="codeblock"><div class="window-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="window-title">src/main.luau</span></div><pre><code class="language-luau">--#include[cache, task]
+
+local stats = cache.mem("stats")
+parallel("@self/worker.luau", stats)
+
+task.wait(0.2)
+print(stats:get("ready")) -- true, set by the worker</code></pre></div>
+<div class="codeblock"><div class="window-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="window-title">src/worker.luau</span></div><pre><code class="language-luau">local stats = ...
+
+stats:set("ready", true)
+stats:increment("workers")</code></pre></div>
+
+<h2>Rich values</h2>
+<p>Ports and <code>parallel(...)</code> arguments only carry simple values. Mem caches accept much more, and this is the safe way to move structured objects between threads: values are broken down into plain data when stored and rebuilt when read. A table keeps its metatable. Buffers and vectors round-trip. These objects rebuild too:</p>
+<table>
+<thead><tr><th>Value</th><th>How it rebuilds</th></tr></thead>
+<tbody>
+<tr><td><a href="datetime.html">datetime</a> objects</td><td>From their timestamp, exact to the microsecond.</td></tr>
+<tr><td><a href="regex.html">regex</a> objects</td><td>Recompiled from the pattern and flags.</td></tr>
+<tr><td><a href="sqlite.html">sqlite</a> databases</td><td>Reopened from the same file. In-memory and closed databases cannot cross.</td></tr>
+<tr><td><a href="mongo.html">mongo</a> clusters, databases, collections, object ids</td><td>Reconnected with the original connection string, once per thread.</td></tr>
+<tr><td><a href="canvas.html">canvas</a> images</td><td>Rebuilt pixel by pixel.</td></tr>
+<tr><td>MemCache handles</td><td>Reopened by name.</td></tr>
+</tbody>
+</table>
+<div class="note"><div class="note-title">What stays out</div><p>Functions, coroutines, file handles, network objects, and anything that holds a callback cannot be stored in a mem cache. They are bound to the thread that made them. Storing one raises a clear error naming the offending key.</p></div>
+
+<h2>Local LRU caches</h2>
+<p>An LRU cache lives on one thread only and can hold any Luau value, functions included. When it grows past its capacity the least recently used entry is evicted. Entries can also expire with a ttl.</p>
+<table>
+<thead><tr><th>Function</th><th>Returns</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>cache.lru(capacity, options?)</code></td><td><code>LruCache</code></td><td>A new local cache holding at most <code>capacity</code> entries. <code>options.ttl</code> sets a default time to live.</td></tr>
+</tbody>
+</table>
+<p>The object has <code>set</code>, <code>get</code>, <code>peek</code> (a get that does not count as a use), <code>has</code>, <code>delete</code>, <code>keys</code>, <code>count</code>, <code>capacity</code>, and <code>clear</code>.</p>
+<div class="codeblock"><div class="window-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="window-title">src/main.luau</span></div><pre><code class="language-luau">--#include[cache]
+
+local recent = cache.lru(2)
+recent:set("a", 1)
+recent:set("b", 2)
+recent:get("a") -- marks a as recently used
+recent:set("c", 3) -- evicts b
+print(recent:has("b")) -- false</code></pre></div>
+
+<h2>Memoization</h2>
+<p><code>cache.memoize(fn, options?)</code> wraps a function so repeated calls with the same arguments return the remembered result instead of running again. Arguments must be values a mem cache could store; results can be anything. <code>options</code> takes <code>ttl</code> and <code>capacity</code> (default 256).</p>
+<div class="codeblock"><div class="window-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="window-title">src/main.luau</span></div><pre><code class="language-luau">--#include[cache]
+
+local slowSquare = cache.memoize(function(n)
+    for _ = 1, 10000000 do end
+    return n * n
+end)
+
+print(slowSquare(12)) -- slow
+print(slowSquare(12)) -- instant</code></pre></div>
+
+<h2>Lifetime and errors</h2>
+<p>Expired entries vanish lazily on access and a background sweeper tidies the rest about once a second, so a mem cache never serves stale data. Mem caches live for the whole program once created; use <code>cache.drop</code> when a named cache should go away. Storing an uncacheable value, incrementing a non-number, or passing a bad ttl raises an error with a <code>cache:</code> prefix that <code>pcall</code> catches like any other.</p>
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer>Lehua is built in Rust on mlua and tokio. Made for people who love Luau.</footer>
+<script src="assets/site.js" defer></script>
+</body>
+</html>

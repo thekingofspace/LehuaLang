@@ -4,8 +4,22 @@ use regex::bytes::{Regex, RegexBuilder};
 use super::LibCtx;
 use crate::error::LehuaError;
 
-struct LuaRegex {
+pub(crate) struct LuaRegex {
     re: Regex,
+    flags: String,
+}
+
+impl LuaRegex {
+    pub(crate) fn from_parts(pattern: &str, flags: &str) -> mlua::Result<LuaRegex> {
+        Ok(LuaRegex {
+            re: build_regex(pattern, flags)?,
+            flags: flags.to_string(),
+        })
+    }
+
+    pub(crate) fn parts(&self) -> (String, String) {
+        (self.re.as_str().to_string(), self.flags.clone())
+    }
 }
 
 fn build_regex(pattern: &str, flags: &str) -> mlua::Result<Regex> {
@@ -178,8 +192,7 @@ pub fn build(ctx: &LibCtx) -> mlua::Result<Value> {
     t.set(
         "new",
         lua.create_function(|_, (pattern, flags): (String, Option<String>)| {
-            let re = build_regex(&pattern, flags.as_deref().unwrap_or(""))?;
-            Ok(LuaRegex { re })
+            LuaRegex::from_parts(&pattern, flags.as_deref().unwrap_or(""))
         })?,
     )?;
 

@@ -48,7 +48,9 @@ while true do
     channel:Push(n * 2)
 end</code></pre></div>
       <p>A <code>Port</code> has <code>Push(value)</code>, <code>Pop()</code> which yields, <code>TryPop()</code> which does not yield, <code>Close()</code>, and <code>IsClosed()</code>.</p>
-      <div class="note"><div class="note-title">Note</div><p>Only simple values cross a Port. That means nil, booleans, numbers, strings, and plain tables. Values are copied, not shared. Functions, threads, and userdata cannot cross, since each worker is a separate VM.</p></div>
+      <div class="note"><div class="note-title">Note</div><p>Only simple values cross a Port. That means nil, booleans, numbers, strings, and plain tables. Values are copied, not shared. Functions, threads, and userdata cannot cross, since each worker is a separate VM. The one exception is a <a href="cache.html">mem cache</a> handle, which crosses by name.</p></div>
+      <h2>Beyond Ports</h2>
+      <p>Ports pair two threads. For broadcast-style events that any thread can hear, use the <a href="messenger.html">messenger</a> global. For shared state with expiring entries, or to move richer objects like datetimes, regexes, and database handles between threads, use a <a href="cache.html">mem cache</a>.</p>
     </article>
   </main>
   <aside class="toc" id="toc" aria-label="On this page"></aside>

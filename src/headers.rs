@@ -3,7 +3,7 @@ pub struct Directives {
     pub includes: Vec<String>,
     pub injects: Vec<String>,
 }
-const RESERVED: &[&str] = &["require", "parallel", "__dirname", "__filename"];
+const RESERVED: &[&str] = &["require", "parallel", "__dirname", "__filename", "messenger"];
 
 const LUAU_KEYWORDS: &[&str] = &[
     "and", "break", "do", "else", "elseif", "end", "false", "for", "function", "if", "in", "local",

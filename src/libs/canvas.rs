@@ -28,6 +28,12 @@ pub fn from_image(img: RgbaImage) -> Canvas {
     }
 }
 
+pub fn from_raw_pixels(width: u32, height: u32, pixels: Vec<u8>) -> mlua::Result<Canvas> {
+    let img = RgbaImage::from_raw(width, height, pixels)
+        .ok_or_else(|| LehuaError::msg("canvas: pixel data does not match the given dimensions"))?;
+    Ok(from_image(img))
+}
+
 pub fn decode_bytes(bytes: &[u8]) -> mlua::Result<Canvas> {
     let img = image::load_from_memory(bytes)
         .map_err(|e| LehuaError::msg(format!("could not decode image: {e}")))?;

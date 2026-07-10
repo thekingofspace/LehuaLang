@@ -1,5 +1,7 @@
 #[cfg(feature = "lib-archive")]
 pub mod archive;
+#[cfg(feature = "lib-cache")]
+pub mod cache;
 #[cfg(feature = "lib-canvas")]
 pub mod canvas;
 #[cfg(feature = "lib-cryptography")]
@@ -89,6 +91,8 @@ pub const KNOWN: &[&str] = &[
     "task",
     #[cfg(feature = "lib-canvas")]
     "canvas",
+    #[cfg(feature = "lib-cache")]
+    "cache",
     "dll",
 ];
 
@@ -129,6 +133,8 @@ pub fn build(name: &str, ctx: &LibCtx) -> mlua::Result<Value> {
         "task" => self::task::build(ctx),
         #[cfg(feature = "lib-canvas")]
         "canvas" => self::canvas::build(ctx),
+        #[cfg(feature = "lib-cache")]
+        "cache" => self::cache::build(ctx),
         "dll" => self::foreign::build(ctx),
         other => Err(LehuaError::msg(format!(
             "built-in library '{other}' is not part of this runtime build"
