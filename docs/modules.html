@@ -32,10 +32,10 @@
       <h1>Modules and require</h1>
       <p>Every module is given its own <code>require</code>, <code>parallel</code>, <code>__dirname</code>, and <code>__filename</code>. You do not need to declare them. <code>require</code> understands a few forms:</p>
       <ul>
-        <li><code>require("./util")</code> loads a file by relative path. While a module's own top level code is running, this is always the module's own folder, so a module can reach its children on initial load. Inside a function called after load, the folder of the file that started the call chain is tried first, then each module along the chain, so a path handed through module functions means what the original caller expects. The <code>.luau</code> ending is added for you.</li>
+        <li><code>require("./util")</code> loads a file by relative path. While a module's own top level code is running, this is the module's own folder, so a module can reach neighboring files on initial load. Inside a function called after load, the folder of the file that started the call chain is tried first, then each module along the chain, so a path handed through module functions means what the original caller expects. The <code>.luau</code> ending is added for you.</li>
         <li><code>require("../shared/log")</code> walks up to a parent folder.</li>
         <li><code>require("./thing")</code> where <code>thing</code> is a folder with an <code>init.luau</code> loads that init file.</li>
-        <li><code>require("@self/helper")</code> points at the current module's own folder. This is handy inside an <code>init.luau</code>.</li>
+        <li>Inside an <code>init.luau</code>, the module is the folder itself, so <code>./</code> points at the folder's parent and reaches the folder's siblings. Use <code>@self</code> to reach the folder's own children, as in <code>require("@self/helper")</code>.</li>
         <li><code>require("@root/hello")</code> uses an alias from <code>.luaurc</code>.</li>
         <li><code>require("hello")</code> loads a Root package by name.</li>
       </ul>

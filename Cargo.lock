@@ -1799,7 +1799,7 @@ dependencies = [
 
 [[package]]
 name = "lehua"
-version = "0.2.13"
+version = "0.2.14"
 dependencies = [
  "ab_glyph",
  "aes-gcm",

@@ -11,6 +11,15 @@ pub enum Resolved {
     Module(String),
 }
 
+fn rel_base(from_id: &str) -> String {
+    let dir = vpath::dirname(from_id);
+    if from_id == "init.luau" || from_id.ends_with("/init.luau") {
+        vpath::dirname(&dir)
+    } else {
+        dir
+    }
+}
+
 fn chain_label(chain: &[String], from_id: &str) -> String {
     if chain.is_empty() {
         from_id.to_string()
@@ -54,7 +63,7 @@ impl Resolver {
         let req = request.trim();
 
         if req.starts_with("./") || req.starts_with("../") {
-            let target = vpath::join(&vpath::dirname(from_id), req);
+            let target = vpath::join(&rel_base(from_id), req);
             return self.resolve_file(provider, &target, from_id, request);
         }
 
@@ -108,7 +117,7 @@ impl Resolver {
         let req = request.trim();
         if req.starts_with("./") || req.starts_with("../") {
             for from in chain {
-                let target = vpath::join(&vpath::dirname(from), req);
+                let target = vpath::join(&rel_base(from), req);
                 if let Ok(r) = self.resolve_file(provider, &target, from, request) {
                     return Ok(r);
                 }
@@ -139,7 +148,7 @@ impl Resolver {
             };
         }
         for from in chain {
-            let target = vpath::join(&vpath::dirname(from), p);
+            let target = vpath::join(&rel_base(from), p);
             if let Ok(Resolved::Module(id)) = self.resolve_file(provider, &target, from, path) {
                 return Ok(id);
             }
@@ -206,5 +215,103 @@ impl Resolver {
             name: request.to_string(),
             from: from_id.to_string(),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::{Path, PathBuf};
+
+    struct MapProvider {
+        base: PathBuf,
+        files: Vec<String>,
+    }
+
+    impl ModuleProvider for MapProvider {
+        fn base_dir(&self) -> &Path {
+            &self.base
+        }
+        fn exists(&self, id: &str) -> bool {
+            self.files.iter().any(|f| f == id)
+        }
+        fn read(&self, id: &str) -> Result<String> {
+            Err(LehuaError::msg(format!("no content for '{id}'")))
+        }
+        fn binary_path(&self, id: &str) -> Result<PathBuf> {
+            Err(LehuaError::msg(format!("no binary for '{id}'")))
+        }
+    }
+
+    fn provider(files: &[&str]) -> MapProvider {
+        MapProvider {
+            base: PathBuf::from("."),
+            files: files.iter().map(|s| s.to_string()).collect(),
+        }
+    }
+
+    fn resolver() -> Resolver {
+        Resolver::build(&BTreeMap::new(), "roots".to_string(), HashSet::new())
+    }
+
+    fn module_id(r: Result<Resolved>) -> String {
+        match r.unwrap() {
+            Resolved::Module(id) => id,
+            Resolved::Builtin(b) => panic!("expected module, got builtin '{b}'"),
+        }
+    }
+
+    #[test]
+    fn init_relative_points_at_folder_parent() {
+        let p = provider(&["pkg/init.luau", "pkg/child.luau", "sibling.luau"]);
+        let r = resolver();
+        assert_eq!(
+            module_id(r.resolve("pkg/init.luau", "./sibling", &p)),
+            "sibling.luau"
+        );
+    }
+
+    #[test]
+    fn init_self_points_at_own_folder() {
+        let p = provider(&["pkg/init.luau", "pkg/child.luau"]);
+        let r = resolver();
+        assert_eq!(
+            module_id(r.resolve("pkg/init.luau", "@self/child", &p)),
+            "pkg/child.luau"
+        );
+    }
+
+    #[test]
+    fn nested_init_relative_and_parent() {
+        let p = provider(&["a/pkg/init.luau", "a/log.luau", "shared/util.luau"]);
+        let r = resolver();
+        assert_eq!(
+            module_id(r.resolve("a/pkg/init.luau", "./log", &p)),
+            "a/log.luau"
+        );
+        assert_eq!(
+            module_id(r.resolve("a/pkg/init.luau", "../shared/util", &p)),
+            "shared/util.luau"
+        );
+    }
+
+    #[test]
+    fn plain_file_relative_points_at_own_folder() {
+        let p = provider(&["pkg/util.luau", "pkg/other.luau"]);
+        let r = resolver();
+        assert_eq!(
+            module_id(r.resolve("pkg/util.luau", "./other", &p)),
+            "pkg/other.luau"
+        );
+    }
+
+    #[test]
+    fn relative_can_load_folder_init() {
+        let p = provider(&["main.luau", "thing/init.luau"]);
+        let r = resolver();
+        assert_eq!(
+            module_id(r.resolve("main.luau", "./thing", &p)),
+            "thing/init.luau"
+        );
     }
 }
