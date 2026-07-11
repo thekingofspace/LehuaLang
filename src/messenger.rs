@@ -71,7 +71,7 @@ fn spawn_callback(lua: &Lua, sched: &Rc<VmScheduler>, func: &Function, args: Mul
     let guard = SchedGuard::new(sched);
     tokio::task::spawn_local(async move {
         let _guard = guard;
-        if let Err(e) = fut.await {
+        if let Err(e) = crate::engine::catch_panics(fut).await {
             eprintln!("lehua: messenger handler error: {}", crate::error::pretty(&e));
         }
     });

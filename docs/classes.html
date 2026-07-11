@@ -1,0 +1,269 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Classes · Lehua</title>
+<meta name="description" content="Classes. Lehua is a standalone Luau runtime that compiles to a single executable.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='6' fill='%23d94a3d'/%3E%3Cg fill='%23e5675b'%3E%3Cellipse cx='16' cy='6' rx='3.4' ry='5'/%3E%3Cellipse cx='16' cy='26' rx='3.4' ry='5'/%3E%3Cellipse cx='6' cy='16' rx='5' ry='3.4'/%3E%3Cellipse cx='26' cy='16' rx='5' ry='3.4'/%3E%3C/g%3E%3Ccircle cx='16' cy='16' r='3' fill='%23ffd24d'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="assets/styles.css">
+<script>(function(){try{var t=localStorage.getItem('lehua-theme');if(!t)t=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light';document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="navbar">
+  <button id="menu-btn" class="icon-btn" aria-label="Open menu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16" stroke-linecap="round"/></svg></button>
+  <a class="brand" href="index.html"><svg viewBox="0 0 32 32"><circle cx="16" cy="16" r="6" fill="#d94a3d"/><g fill="#e5675b"><ellipse cx="16" cy="6" rx="3.4" ry="5"/><ellipse cx="16" cy="26" rx="3.4" ry="5"/><ellipse cx="6" cy="16" rx="5" ry="3.4"/><ellipse cx="26" cy="16" rx="5" ry="3.4"/></g><circle cx="16" cy="16" r="3" fill="#ffd24d"/></svg> Lehua</a>
+  <div class="nav-spacer"></div>
+  <nav class="nav-links">
+    <a class="docs" href="introduction.html">Docs</a>
+    <a class="gh" href="https://github.com/thekingofspace/LehuaLang"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.58 2 12.25c0 4.53 2.87 8.37 6.84 9.73.5.1.68-.22.68-.49v-1.7c-2.78.62-3.37-1.22-3.37-1.22-.45-1.18-1.11-1.5-1.11-1.5-.91-.64.07-.62.07-.62 1 .07 1.53 1.06 1.53 1.06.9 1.58 2.36 1.12 2.94.86.09-.67.35-1.12.63-1.38-2.22-.26-4.56-1.14-4.56-5.07 0-1.12.39-2.03 1.03-2.75-.1-.26-.45-1.3.1-2.71 0 0 .84-.28 2.75 1.05a9.3 9.3 0 015 0c1.91-1.33 2.75-1.05 2.75-1.05.55 1.41.2 2.45.1 2.71.64.72 1.03 1.63 1.03 2.75 0 3.94-2.34 4.81-4.57 5.06.36.32.68.94.68 1.9v2.82c0 .27.18.6.69.49A10.02 10.02 0 0022 12.25C22 6.58 17.52 2 12 2z"/></svg> GitHub</a>
+  </nav>
+  <button id="theme-btn" class="icon-btn" aria-label="Toggle theme"><svg id="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z" stroke-linejoin="round"/></svg><svg id="icon-sun" style="display:none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.4 1.4M17.6 17.6L19 19M19 5l-1.4 1.4M6.4 17.6L5 19" stroke-linecap="round"/></svg></button>
+</header>
+<div class="backdrop" id="backdrop"></div>
+<div class="layout">
+  <aside class="sidebar" id="sidebar">
+    <label class="side-search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3" stroke-linecap="round"/></svg><input id="side-search" type="text" placeholder="Search docs" aria-label="Search the docs"><kbd>Ctrl K</kbd></label>
+    <nav id="side-nav" class="side-nav"></nav>
+  </aside>
+  <main class="content">
+    <article class="doc-page">
+      <p class="eyebrow">Guides</p>
+      <h1>Classes</h1>
+      <p>Lehua has a small class system built into the runtime. Every module can use it with no include and no import. You describe a class with <code>NewClassData</code>, then stamp out objects from it with <code>BuildClassData</code>. A class separates private state from a public surface, holds static members that live on the class itself, supports single and multiple inheritance, checks interfaces, and lets you customize <code>typeof</code> and how an object prints.</p>
+
+      <div class="note"><div class="note-title">The keywords</div><p>Six globals make up the system: <code>NewClassData</code>, <code>BuildClassData</code>, <code>SuperGet</code>, <code>Interface</code>, and <code>Implements</code>, plus a <code>typeof</code> that understands a <code>__type</code> field. They are always in scope, in the main VM and in every parallel worker.</p></div>
+
+      <h2>Defining a class</h2>
+      <p><code>NewClassData</code> takes one table that describes the class and returns a ClassData handle. The three field buckets are <code>Private</code>, <code>Public</code>, and <code>Static</code>. A <code>__construct</code> function runs when an object is built, and any <code>__</code> key becomes a metamethod on the built objects.</p>
+      <div class="codeblock"><div class="window-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="window-title">src/counter.luau</span></div><pre><code class="language-luau">local Counter = NewClassData({
+    Name = "Counter",
+    Private = {
+        count = 0,
+    },
+    Public = {
+        Increment = function(self, by)
+            self.count = self.count + (by or 1)
+            return self.count
+        end,
+        Get = function(self)
+            return self.count
+        end,
+    },
+    Static = {
+        Version = "1.0",
+    },
+    __construct = function(self, start)
+        if start ~= nil then
+            self.count = start
+        end
+    end,
+})</code></pre></div>
+      <p>The table may hold these keys:</p>
+      <table>
+      <thead><tr><th>Key</th><th>Meaning</th></tr></thead>
+      <tbody>
+      <tr><td><code>Private</code></td><td>Fields that only methods can reach, through <code>self</code>. Each object gets its own copy.</td></tr>
+      <tr><td><code>Public</code></td><td>Methods and fields callers may use. Each object gets its own copy.</td></tr>
+      <tr><td><code>Static</code></td><td>Members that live on the class itself, shared by every object.</td></tr>
+      <tr><td><code>__construct</code></td><td>Runs during <code>BuildClassData</code> as <code>__construct(self, ...)</code> with the build arguments.</td></tr>
+      <tr><td><code>Inherits</code></td><td>A parent class, or a list of parents. See <a href="#inheritance">Inheritance</a>.</td></tr>
+      <tr><td><code>Interfaces</code></td><td>A list of interfaces the class must satisfy. Checked when the class is created.</td></tr>
+      <tr><td><code>Name</code></td><td>A label used in the default console output.</td></tr>
+      <tr><td><code>__add</code>, <code>__tostring</code>, <code>__type</code>, <code>__toconsole</code>, ...</td><td>Any <code>__</code> key other than <code>__construct</code> becomes a metamethod on built objects.</td></tr>
+      </tbody>
+      </table>
+
+      <h2>Building objects</h2>
+      <p><code>BuildClassData</code> takes a class and any constructor arguments, and returns a fresh object. It deep-copies the <code>Private</code> and <code>Public</code> tables into the new object, so one object never shares state with another. Functions are shared by reference, but data, including nested tables, is copied.</p>
+      <div class="codeblock"><pre><code class="language-luau">local a = BuildClassData(Counter, 10)
+local b = BuildClassData(Counter)
+
+print(a:Increment(5)) -- 15
+print(b:Get())        -- 0, b is untouched by changes to a</code></pre></div>
+
+      <h2>Private, public, and self</h2>
+      <p>Inside a method, <code>self</code> reaches everything the object holds, both public and private. From outside, only public members are visible. Reading or writing a private field from outside raises a Lua error, so private really means private.</p>
+      <div class="codeblock"><pre><code class="language-luau">local c = BuildClassData(Counter)
+
+print(c:Get())          -- 0, a public method
+
+local ok = pcall(function()
+    return c.count      -- error: cannot read private field 'count'
+end)
+print(ok)               -- false</code></pre></div>
+      <div class="note"><div class="note-title">Note</div><p>A method receives the object as <code>self</code>, so <code>self.count</code> reads the private field and <code>self:Get()</code> calls another public method. External code goes through the object's public surface, where private keys are hidden and assigning to one is an error.</p></div>
+
+      <h2>Statics</h2>
+      <p>Static members live on the class, not on any object. You reach them straight from the class handle, and also from any object built from it.</p>
+      <div class="codeblock"><pre><code class="language-luau">print(Counter.Version)  -- 1.0
+local c = BuildClassData(Counter)
+print(c.Version)        -- 1.0
+
+Counter.Version = "2.0"
+print(c.Version)        -- 2.0, statics are shared</code></pre></div>
+      <p>When a class inherits a static, that static keeps pointing back to the class that defined it. Reading or writing an inherited static goes to the origin class, so there is one shared value, not a copy per child.</p>
+
+      <h2>typeof and __type</h2>
+      <p>Lehua's <code>typeof</code> works exactly like the built-in for every value except a table that carries a <code>__type</code> marker. The marker can sit on the table directly or on its metatable, and it may be a string or a function that returns a string. Anything that is not a table, and any table without a marker, falls through to the normal <code>typeof</code>.</p>
+      <div class="codeblock"><pre><code class="language-luau">local Vec = NewClassData({
+    Private = { x = 0, y = 0 },
+    Public = {},
+    __type = "Vector",
+    __construct = function(self, x, y)
+        self.x, self.y = x, y
+    end,
+})
+
+print(typeof(BuildClassData(Vec, 1, 2))) -- Vector
+print(typeof(Vec))                       -- ClassData
+print(typeof(42))                        -- number
+print(typeof("hi"))                      -- string</code></pre></div>
+      <p>A function marker receives the object, so the type can depend on the object's state.</p>
+      <div class="codeblock"><pre><code class="language-luau">local Tagged = NewClassData({
+    Private = { tag = "?" },
+    Public = {},
+    __type = function(self)
+        return "Tagged:" .. self.tag
+    end,
+    __construct = function(self, tag)
+        self.tag = tag
+    end,
+})
+
+print(typeof(BuildClassData(Tagged, "widget"))) -- Tagged:widget</code></pre></div>
+
+      <h2>Printing with __toconsole</h2>
+      <p>Give a class a <code>__toconsole</code> and <code>print</code> uses it to show the object. It can be a string, or a function that receives the object and returns text. Without one, an object prints as its class name followed by its public data.</p>
+      <div class="codeblock"><pre><code class="language-luau">local Vec = NewClassData({
+    Name = "Vec",
+    Private = { x = 0, y = 0 },
+    Public = {},
+    __toconsole = function(self)
+        return "Vector(" .. self.x .. ", " .. self.y .. ")"
+    end,
+    __construct = function(self, x, y)
+        self.x, self.y = x, y
+    end,
+})
+
+print(BuildClassData(Vec, 1, 2)) -- Vector(1, 2)</code></pre></div>
+
+      <h2>Metamethods</h2>
+      <p>Any <code>__</code> key other than <code>__construct</code> becomes a metamethod on built objects. Operators like <code>__add</code>, <code>__eq</code>, and <code>__tostring</code> all work, and each object argument arrives as its own <code>self</code>, so a metamethod can read private state.</p>
+      <div class="codeblock"><pre><code class="language-luau">local Vec
+Vec = NewClassData({
+    Private = { x = 0, y = 0 },
+    Public = {
+        Sum = function(self) return self.x + self.y end,
+    },
+    __add = function(self, other)
+        return BuildClassData(Vec, self.x + other.x, self.y + other.y)
+    end,
+    __construct = function(self, x, y)
+        self.x, self.y = x, y
+    end,
+})
+
+local sum = BuildClassData(Vec, 1, 2) + BuildClassData(Vec, 3, 4)
+print(sum:Sum()) -- 10</code></pre></div>
+      <div class="note"><div class="note-title">Referring to a class from inside itself</div><p>A metamethod that builds another object of the same class needs the class in scope. Declare the local first, then assign it, as in <code>local Vec</code> followed by <code>Vec = NewClassData({ ... })</code>. Otherwise the name is not yet visible inside the table.</p></div>
+
+      <h2 id="inheritance">Inheritance</h2>
+      <p>Set <code>Inherits</code> to a parent class to take everything it defines. The child's own <code>Public</code>, <code>Private</code>, and <code>Static</code> override anything with the same name from the parent.</p>
+      <div class="codeblock"><pre><code class="language-luau">local Animal = NewClassData({
+    Private = { name = "?" },
+    Public = {
+        Speak = function(self) return self.name .. " makes a sound" end,
+        GetName = function(self) return self.name end,
+    },
+    __construct = function(self, name) self.name = name end,
+})
+
+local Dog = NewClassData({
+    Inherits = Animal,
+    Public = {
+        Speak = function(self) return self.name .. " barks" end,
+    },
+    __construct = function(self, name) self.name = name end,
+})
+
+local d = BuildClassData(Dog, "Rex")
+print(d:Speak())   -- Rex barks, overridden
+print(d:GetName()) -- Rex, inherited</code></pre></div>
+
+      <h2>Multiple parents</h2>
+      <p>To inherit from more than one parent, list the parents and name which keys to take from each, split by kind. This keeps inheritance explicit, so you pick exactly the fields you want and reach the rest with <code>SuperGet</code>.</p>
+      <div class="codeblock"><pre><code class="language-luau">local Widget = NewClassData({
+    Name = "Widget",
+    Inherits = {
+        { Class = Disposable, Public = { "Destroy" }, Private = { "disposed" } },
+        { Class = Named, Public = { "GetLabel", "SetLabel" }, Private = { "label" }, Static = { "Registry" } },
+    },
+    Private = { width = 0 },
+    Public = {
+        GetWidth = function(self) return self.width end,
+    },
+    __construct = function(self, label, width)
+        self.label, self.width = label, width
+    end,
+})</code></pre></div>
+      <p>Each entry is a table with a <code>Class</code> and lists of key names under <code>Public</code>, <code>Private</code>, <code>Static</code>, and <code>Metamethods</code>. Only the listed keys are inherited directly. A bare class in the list, or <code>Inherits = Parent</code> on its own, takes everything from that parent.</p>
+      <div class="note"><div class="note-title">Name clashes are an error</div><p>Inheriting the same key from two parents raises an error, and so does naming a key the parent does not have. When two parents share a name, take it from only one and reach the other through <code>SuperGet</code>.</p></div>
+
+      <h2>SuperGet</h2>
+      <p><code>SuperGet</code> pulls a raw field or method off a class without binding it. You then call it yourself and pass the object as the first argument. This reaches a parent's members whether or not the child inherited them directly, which is how you call a base method after overriding it.</p>
+      <div class="codeblock"><pre><code class="language-luau">local Dog = NewClassData({
+    Inherits = Animal,
+    Public = {
+        Speak = function(self) return self.name .. " barks" end,
+        SpeakLikeAnimal = function(self)
+            return SuperGet(Animal, "Speak")(self)
+        end,
+    },
+    __construct = function(self, name) self.name = name end,
+})
+
+local d = BuildClassData(Dog, "Rex")
+print(d:SpeakLikeAnimal()) -- Rex makes a sound</code></pre></div>
+      <p><code>SuperGet</code> looks through the class's public, then private, then static, then metamethod members, and returns the first match. Since it hands back the raw function, call it from inside a method where <code>self</code> is the full object, so the function can reach private fields.</p>
+
+      <h2>Interfaces</h2>
+      <p><code>Interface</code> describes a set of members a class must provide. List the members as a table, or pass a table with a <code>Name</code> and a <code>Requires</code> list. A class that names the interface under <code>Interfaces</code> is checked the moment it is created, and fails loudly if a required member is missing.</p>
+      <div class="codeblock"><pre><code class="language-luau">local IShape = Interface({ Name = "IShape", Requires = { "Area" } })
+
+local Circle = NewClassData({
+    Private = { r = 0 },
+    Public = {
+        Area = function(self) return 3.14 * self.r * self.r end,
+    },
+    Interfaces = { IShape },
+    __construct = function(self, r) self.r = r end,
+})
+
+local c = BuildClassData(Circle, 2)
+print(Implements(c, IShape))            -- true
+print(Implements(c, Interface({ "X" }))) -- false</code></pre></div>
+      <p><code>Implements(value, interface)</code> returns whether an object or a class provides every member the interface requires. It checks the public surface and statics.</p>
+
+      <h2>Reference</h2>
+      <table>
+      <thead><tr><th>Keyword</th><th>Signature</th><th>Returns</th></tr></thead>
+      <tbody>
+      <tr><td><code>NewClassData</code></td><td><code>NewClassData(spec)</code></td><td>A ClassData handle described by the spec table.</td></tr>
+      <tr><td><code>BuildClassData</code></td><td><code>BuildClassData(class, ...)</code></td><td>A new object, with private and public data deep-copied, after <code>__construct</code> runs.</td></tr>
+      <tr><td><code>SuperGet</code></td><td><code>SuperGet(class, key)</code></td><td>The raw member for that key, to call with an explicit <code>self</code>.</td></tr>
+      <tr><td><code>Interface</code></td><td><code>Interface(spec)</code></td><td>An interface value listing required member names.</td></tr>
+      <tr><td><code>Implements</code></td><td><code>Implements(value, interface)</code></td><td><code>true</code> if the object or class provides every required member.</td></tr>
+      <tr><td><code>typeof</code></td><td><code>typeof(value)</code></td><td>The <code>__type</code> marker for a marked table, otherwise the normal type.</td></tr>
+      </tbody>
+      </table>
+      <div class="note"><div class="note-title">Errors</div><p>Misusing the class functions raises Lua errors: reading or writing a private field from outside, passing a non-class to <code>BuildClassData</code> or <code>SuperGet</code>, clashing inherited names, or missing an interface member. Wrap a call in <code>pcall</code> when you want to handle these yourself.</p></div>
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer>Lehua is built in Rust on mlua and tokio. Made for people who love Luau.</footer>
+<script src="assets/site.js" defer></script>
+</body>
+</html>

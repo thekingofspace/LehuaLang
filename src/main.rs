@@ -1,4 +1,5 @@
 mod bundle;
+mod class;
 mod cli;
 mod dll;
 mod engine;
@@ -47,6 +48,7 @@ fn install_tls_provider() {}
 fn main() -> ExitCode {
     enable_ansi();
     install_tls_provider();
+    engine::install_panic_hook();
     let args: Vec<String> = std::env::args_os()
         .skip(1)
         .map(|a| a.to_string_lossy().into_owned())

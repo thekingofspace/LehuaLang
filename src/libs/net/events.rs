@@ -97,7 +97,7 @@ pub fn spawn_handler(
     let guard = TaskGuard::new(sched);
     tokio::task::spawn_local(async move {
         let _guard = guard;
-        if let Err(e) = fut.await {
+        if let Err(e) = crate::engine::catch_panics(fut).await {
             eprintln!("lehua: net: {what} handler error: {}", crate::error::pretty(&e));
         }
     });

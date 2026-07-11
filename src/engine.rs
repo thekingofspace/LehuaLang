@@ -1,9 +1,13 @@
+use std::any::Any;
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
+use std::future::Future;
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::rc::Rc;
 use std::sync::Arc;
+use std::task::Poll;
 use std::time::{Duration, Instant};
 
 use mlua::chunk::Compiler;
@@ -199,10 +203,62 @@ impl ThreadControl {
     }
 }
 
+pub fn panic_message(payload: &(dyn Any + Send)) -> String {
+    if let Some(s) = payload.downcast_ref::<&str>() {
+        s.to_string()
+    } else if let Some(s) = payload.downcast_ref::<String>() {
+        s.clone()
+    } else {
+        "unknown panic".to_string()
+    }
+}
+
+pub fn panic_error(payload: Box<dyn Any + Send>) -> mlua::Error {
+    LehuaError::msg(format!("panic: {}", panic_message(payload.as_ref()))).into()
+}
+
+fn env_enabled(name: &str) -> bool {
+    match std::env::var(name) {
+        Ok(v) => !v.is_empty() && v != "0",
+        Err(_) => false,
+    }
+}
+
+pub fn install_panic_hook() {
+    static INSTALLED: std::sync::Once = std::sync::Once::new();
+    INSTALLED.call_once(|| {
+        let default = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |info| {
+            if env_enabled("RUST_BACKTRACE") || env_enabled("LEHUA_PANIC_TRACE") {
+                default(info);
+            }
+        }));
+    });
+}
+
+pub async fn catch_panics<T>(fut: impl Future<Output = mlua::Result<T>>) -> mlua::Result<T> {
+    let mut fut = Box::pin(fut);
+    std::future::poll_fn(
+        |cx| match catch_unwind(AssertUnwindSafe(|| fut.as_mut().poll(cx))) {
+            Ok(poll) => poll,
+            Err(payload) => Poll::Ready(Err(panic_error(payload))),
+        },
+    )
+    .await
+}
+
 pub async fn thread_step(
     stream: &mut Pin<Box<AsyncThread<MultiValue>>>,
 ) -> Option<mlua::Result<MultiValue>> {
-    std::future::poll_fn(|cx| futures_core::Stream::poll_next(stream.as_mut(), cx)).await
+    std::future::poll_fn(|cx| {
+        match catch_unwind(AssertUnwindSafe(|| {
+            futures_core::Stream::poll_next(stream.as_mut(), cx)
+        })) {
+            Ok(poll) => poll,
+            Err(payload) => Poll::Ready(Some(Err(panic_error(payload)))),
+        }
+    })
+    .await
 }
 
 fn install_resume_hook(
@@ -323,8 +379,15 @@ impl VmScheduler {
         let handlers: Vec<Function> = std::mem::take(&mut self.close.borrow_mut());
         let code = self.exit_code.get();
         for f in handlers {
-            if let Err(e) = f.call::<()>(code) {
-                eprintln!("lehua: close handler error: {}", crate::error::pretty(&e));
+            match catch_unwind(AssertUnwindSafe(|| f.call::<()>(code))) {
+                Ok(Ok(())) => {}
+                Ok(Err(e)) => {
+                    eprintln!("lehua: close handler error: {}", crate::error::pretty(&e))
+                }
+                Err(payload) => eprintln!(
+                    "lehua: close handler error: {}",
+                    crate::error::pretty(panic_error(payload))
+                ),
             }
         }
     }
@@ -344,6 +407,7 @@ pub fn make_vm(engine: Arc<Engine>) -> Result<(Lua, Rc<VmContext>)> {
     let control = ThreadControl::of(&lua);
     install_resume_hook(&lua, control, ctx.sched.clone())?;
     crate::messenger::install(&lua, ctx.sched.clone())?;
+    crate::class::install(&lua)?;
     Ok((lua, ctx))
 }
 
@@ -413,7 +477,9 @@ fn format_value(
             }
         }
         Value::Table(t) => {
-            if has_custom_tostring(t) {
+            if let Some(text) = console_repr(tostring, t, v)? {
+                out.extend_from_slice(&text);
+            } else if has_custom_tostring(t) {
                 let text = tostring.call::<mlua::LuaString>(v.clone())?;
                 out.extend_from_slice(&text.as_bytes());
             } else {
@@ -445,6 +511,31 @@ fn has_custom_tostring(t: &mlua::Table) -> bool {
     match t.metatable() {
         Some(mt) => matches!(mt.raw_get::<Value>("__tostring"), Ok(v) if !v.is_nil()),
         None => false,
+    }
+}
+
+fn console_repr(
+    tostring: &Function,
+    t: &mlua::Table,
+    v: &Value,
+) -> mlua::Result<Option<Vec<u8>>> {
+    let mt = match t.metatable() {
+        Some(mt) => mt,
+        None => return Ok(None),
+    };
+    let field: Value = mt.raw_get("__toconsole")?;
+    match field {
+        Value::Nil => Ok(None),
+        Value::String(s) => Ok(Some(s.as_bytes().to_vec())),
+        Value::Function(f) => {
+            let produced = f.call::<Value>(v.clone())?;
+            let text = match produced {
+                Value::String(s) => s.as_bytes().to_vec(),
+                other => tostring.call::<mlua::LuaString>(other)?.as_bytes().to_vec(),
+            };
+            Ok(Some(text))
+        }
+        other => Ok(Some(tostring.call::<mlua::LuaString>(other)?.as_bytes().to_vec())),
     }
 }
 
@@ -597,7 +688,7 @@ async fn heartbeat_loop(ctx: &Rc<VmContext>) {
             return;
         }
         for f in funcs {
-            if let Err(e) = f.call_async::<()>(dt).await {
+            if let Err(e) = catch_panics(f.call_async::<()>(dt)).await {
                 eprintln!("lehua: heartbeat error: {}", crate::error::pretty(&e));
             }
         }

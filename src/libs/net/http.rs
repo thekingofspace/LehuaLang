@@ -297,7 +297,7 @@ fn dispatch_request(lua: &Lua, sched: &Rc<VmScheduler>, req: HttpRequest, cb: &F
     let guard = TaskGuard::new(sched);
     tokio::task::spawn_local(async move {
         let _guard = guard;
-        let result = fut.await;
+        let result = crate::engine::catch_panics(fut).await;
         let pending = ud
             .borrow::<HttpRequest>()
             .ok()
