@@ -961,7 +961,38 @@ export type CacheLib = {
     drop: (name: string) -> boolean,
 }
 
+export type ClassData = { [any]: any }
+
+export type Interface = { [any]: any }
+
+export type ClassInherit = {
+    Class: ClassData,
+    Public: { string }?,
+    Private: { string }?,
+    Static: { string }?,
+    Metamethods: { string }?,
+}
+
+export type ClassSpec = {
+    Name: string?,
+    Private: { [string]: any }?,
+    Public: { [string]: any }?,
+    Static: { [string]: any }?,
+    Inherits: (ClassData | { ClassData | ClassInherit })?,
+    Interfaces: { Interface }?,
+    __construct: ((...any) -> ())?,
+    [string]: any,
+}
+
+export type InterfaceSpec = { string } | { Name: string?, Requires: { string } }
+
 declare function parallel(path: string, ...: any): Port
+
+declare function NewClassData(spec: ClassSpec): ClassData
+declare function BuildClassData(class: ClassData, ...: any): any
+declare function SuperGet(class: ClassData, key: string): any
+declare function Interface(spec: InterfaceSpec): Interface
+declare function Implements(value: any, interface: Interface): boolean
 
 declare __dirname: string
 declare __filename: string
