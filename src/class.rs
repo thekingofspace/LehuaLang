@@ -477,6 +477,7 @@ fn build_class_data(lua: &Lua, registry: &Table, mut args: MultiValue) -> mlua::
     let idx_meta = meta.clone();
     let idx_internal = internal.clone();
     let idx_cache = bound_cache.clone();
+    let idx_registry = registry.clone();
     pmeta.raw_set(
         "__index",
         lua.create_function(move |lua, (_t, key): (Value, Value)| {
@@ -491,20 +492,9 @@ fn build_class_data(lua: &Lua, registry: &Table, mut args: MultiValue) -> mlua::
                     if !cached.is_nil() {
                         return Ok(cached);
                     }
-                    let bound_internal = idx_internal.clone();
-                    let bound = lua.create_function(move |_, call: MultiValue| {
-                        let mut rest: Vec<Value> = call.into_iter().collect();
-                        if !rest.is_empty() {
-                            rest.remove(0);
-                        }
-                        let mut with_self = Vec::with_capacity(rest.len() + 1);
-                        with_self.push(Value::Table(bound_internal.clone()));
-                        with_self.extend(rest);
-                        f.call::<MultiValue>(MultiValue::from_vec(with_self))
-                    })?;
-                    let bound_val = Value::Function(bound);
-                    idx_cache.raw_set(key, bound_val.clone())?;
-                    return Ok(bound_val);
+                    let bound = Value::Function(bind_super(lua, &idx_registry, f)?);
+                    idx_cache.raw_set(key, bound.clone())?;
+                    return Ok(bound);
                 }
                 return Ok(val);
             }
@@ -620,31 +610,50 @@ fn build_class_data(lua: &Lua, registry: &Table, mut args: MultiValue) -> mlua::
     Ok(proxy)
 }
 
-fn super_get(_lua: &Lua, class: Value, key: Value) -> mlua::Result<Value> {
+fn super_member(meta: &Table, key: &Value) -> mlua::Result<Option<Value>> {
+    let public: Table = meta.raw_get("public")?;
+    let v: Value = public.raw_get(key.clone())?;
+    if !v.is_nil() {
+        return Ok(Some(v));
+    }
+    let private: Table = meta.raw_get("private")?;
+    let v: Value = private.raw_get(key.clone())?;
+    if !v.is_nil() {
+        return Ok(Some(v));
+    }
+    if static_exists(meta, key)? {
+        return Ok(Some(resolve_static(meta, key)?));
+    }
+    let mm: Table = meta.raw_get("metamethods")?;
+    let v: Value = mm.raw_get(key.clone())?;
+    if !v.is_nil() {
+        return Ok(Some(v));
+    }
+    Ok(None)
+}
+
+fn bind_super(lua: &Lua, registry: &Table, f: Function) -> mlua::Result<Function> {
+    let reg = registry.clone();
+    lua.create_function(move |_, call: MultiValue| {
+        let mut args = Vec::with_capacity(call.len());
+        for a in call.into_iter() {
+            args.push(translate(&reg, a)?);
+        }
+        f.call::<MultiValue>(MultiValue::from_vec(args))
+    })
+}
+
+fn super_get(lua: &Lua, registry: &Table, class: Value, key: Value) -> mlua::Result<Value> {
     let class = match class {
         Value::Table(t) if is_class_table(&t) => t,
         _ => return Err(lua_err("expected a ClassData value")),
     };
     let meta = class_meta(&class)?;
-    let public: Table = meta.raw_get("public")?;
-    let v: Value = public.raw_get(key.clone())?;
-    if !v.is_nil() {
-        return Ok(v);
+    match super_member(&meta, &key)? {
+        Some(Value::Function(f)) => Ok(Value::Function(bind_super(lua, registry, f)?)),
+        Some(v) => Ok(v),
+        None => Err(lua_err(format!("SuperGet: class has no field '{}'", key_str(&key)))),
     }
-    let private: Table = meta.raw_get("private")?;
-    let v: Value = private.raw_get(key.clone())?;
-    if !v.is_nil() {
-        return Ok(v);
-    }
-    if static_exists(&meta, &key)? {
-        return resolve_static(&meta, &key);
-    }
-    let mm: Table = meta.raw_get("metamethods")?;
-    let v: Value = mm.raw_get(key.clone())?;
-    if !v.is_nil() {
-        return Ok(v);
-    }
-    Err(lua_err(format!("SuperGet: class has no field '{}'", key_str(&key))))
 }
 
 fn interface(lua: &Lua, spec: Table) -> mlua::Result<Table> {
@@ -731,9 +740,12 @@ pub fn install(lua: &Lua) -> mlua::Result<()> {
         })?,
     )?;
 
+    let super_registry = registry.clone();
     globals.set(
         "SuperGet",
-        lua.create_function(|lua, (class, key): (Value, Value)| super_get(lua, class, key))?,
+        lua.create_function(move |lua, (class, key): (Value, Value)| {
+            super_get(lua, &super_registry, class, key)
+        })?,
     )?;
 
     globals.set(
