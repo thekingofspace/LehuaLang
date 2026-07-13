@@ -212,6 +212,60 @@ pub fn build(ctx: &LibCtx) -> mlua::Result<Value> {
     {
         let scope = scope.clone();
         t.set(
+            "readBufferAt",
+            lua.create_function(move |lua, (p, start, end): (String, i64, i64)| {
+                if start < 0 || end < 0 {
+                    return Err(LehuaError::msg(
+                        "fs.readBufferAt: start and end must not be negative",
+                    )
+                    .into());
+                }
+                if end < start {
+                    return Err(LehuaError::msg(
+                        "fs.readBufferAt: end must not be before start",
+                    )
+                    .into());
+                }
+                let full = scope.resolve(&p)?;
+                let mut f = File::open(&full).map_err(mlua::Error::external)?;
+                f.seek(SeekFrom::Start(start as u64))
+                    .map_err(mlua::Error::external)?;
+                let mut bytes = Vec::new();
+                Read::by_ref(&mut f)
+                    .take((end - start) as u64)
+                    .read_to_end(&mut bytes)
+                    .map_err(mlua::Error::external)?;
+                lua.create_buffer(bytes)
+            })?,
+        )?;
+    }
+    {
+        let scope = scope.clone();
+        t.set(
+            "writeBufferAt",
+            lua.create_function(move |_, (p, start, buf): (String, i64, mlua::Buffer)| {
+                if start < 0 {
+                    return Err(LehuaError::msg(
+                        "fs.writeBufferAt: start must not be negative",
+                    )
+                    .into());
+                }
+                let full = scope.resolve(&p)?;
+                let mut f = OpenOptions::new()
+                    .write(true)
+                    .create(true)
+                    .open(&full)
+                    .map_err(mlua::Error::external)?;
+                f.seek(SeekFrom::Start(start as u64))
+                    .map_err(mlua::Error::external)?;
+                f.write_all(&buf.to_vec()).map_err(mlua::Error::external)?;
+                Ok(())
+            })?,
+        )?;
+    }
+    {
+        let scope = scope.clone();
+        t.set(
             "append",
             lua.create_function(move |_, (p, data): (String, mlua::LuaString)| {
                 let full = scope.resolve(&p)?;

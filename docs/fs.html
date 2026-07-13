@@ -129,6 +129,25 @@ fs.writeBuffer("./save.dat", b)
 local back = fs.readBuffer("./save.dat")
 print(buffer.readu32(back, 0), buffer.readf32(back, 4)) -- 42, 1.5</code></pre></div>
 
+<h2>Partial reads and writes</h2>
+<p>The buffer pair above moves a whole file at once. When a file is large and you only need a slice of it, <code>fs.readBufferAt</code> and <code>fs.writeBufferAt</code> work on a byte range instead, so nothing more than that range is ever held in memory. Both seek straight to the offset rather than scanning from the start.</p>
+<table>
+<thead><tr><th>Function</th><th>Returns</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>fs.readBufferAt(path, start, end)</code></td><td><code>buffer</code></td><td>The bytes from offset <code>start</code> up to, but not including, <code>end</code>, as a buffer. A range past the end of the file stops at the last byte, so the buffer can be shorter than <code>end - start</code>.</td></tr>
+<tr><td><code>fs.writeBufferAt(path, start, data)</code></td><td><code>nil</code></td><td>Writes the buffer <code>data</code> into the file beginning at offset <code>start</code>, overwriting those bytes in place and leaving the rest of the file untouched. The file is created if missing, and writing past the end extends it, filling any gap with zeros.</td></tr>
+</tbody>
+</table>
+<p>Offsets are counted in bytes from the start of the file. A negative offset, or an <code>end</code> before <code>start</code>, raises a Lua error.</p>
+<div class="codeblock"><div class="window-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="window-title">src/main.luau</span></div><pre><code class="language-luau">fs.write("./data.bin", "ABCDEFGHIJ")
+
+local slice = fs.readBufferAt("./data.bin", 3, 7)
+print(buffer.tostring(slice)) -- DEFG
+
+fs.writeBufferAt("./data.bin", 2, buffer.fromstring("xy"))
+print(fs.read("./data.bin")) -- ABxyEFGHIJ</code></pre></div>
+<div class="note"><div class="note-title">Note</div><p>The end of a write is set by the length of <code>data</code>, so <code>writeBufferAt</code> takes only a start offset. To replace a fixed region, hand it a buffer of exactly that size.</p></div>
+
 <h2>Finding files with glob</h2>
 <p><code>fs.glob(pattern)</code> returns an array of full paths that match a pattern. Where <code>fs.readDir</code> lists everything in one folder by name, <code>glob</code> filters by shape and can search whole trees. The pattern is resolved like any other path, so <code>./*.txt</code> looks next to the current script. A pattern that is not valid raises an error.</p>
 <table>
