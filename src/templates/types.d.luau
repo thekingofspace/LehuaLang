@@ -55,7 +55,7 @@ export type FS = {
     write: (path: string, data: string) -> (),
     readBuffer: (path: string) -> buffer,
     writeBuffer: (path: string, data: buffer) -> (),
-    readBufferAt: (path: string, start: number, end: number) -> buffer,
+    readBufferAt: (path: string, start: number, endpoint: number) -> buffer,
     writeBufferAt: (path: string, start: number, data: buffer) -> (),
     readImage: (path: string) -> Canvas,
     writeImage: (path: string, image: Canvas, format: ImageFormat?, quality: number?) -> string,
