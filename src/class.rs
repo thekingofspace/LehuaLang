@@ -764,9 +764,9 @@ pub fn install(lua: &Lua) -> mlua::Result<()> {
         })?,
     )?;
 
-    let raw_typeof: Function = globals.get("typeof")?;
+    let native_typeof: Function = globals.get("typeof")?;
     globals.set(
-        "typeof",
+        "GetType",
         lua.create_function(move |_, v: Value| {
             let marker = match &v {
                 Value::Table(t) => {
@@ -783,7 +783,7 @@ pub fn install(lua: &Lua) -> mlua::Result<()> {
                 _ => Value::Nil,
             };
             match marker {
-                Value::Nil => raw_typeof.call::<Value>(v),
+                Value::Nil => native_typeof.call::<Value>(v),
                 Value::Function(f) => f.call::<Value>(v),
                 other => Ok(other),
             }
@@ -983,21 +983,21 @@ mod tests {
     }
 
     #[test]
-    fn typeof_is_native_for_non_tables() {
+    fn get_type_is_native_for_non_tables() {
         assert_eq!(
             eval_string(
                 r#"
                 local co = coroutine.create(function() end)
                 local parts = {
-                    typeof(nil),
-                    typeof(true),
-                    typeof(1),
-                    typeof(1.5),
-                    typeof("s"),
-                    typeof(print),
-                    typeof(co),
-                    typeof(vector.create(1, 2, 3)),
-                    typeof(buffer.create(4)),
+                    GetType(nil),
+                    GetType(true),
+                    GetType(1),
+                    GetType(1.5),
+                    GetType("s"),
+                    GetType(print),
+                    GetType(co),
+                    GetType(vector.create(1, 2, 3)),
+                    GetType(buffer.create(4)),
                 }
                 return table.concat(parts, ",")
                 "#
@@ -1007,12 +1007,12 @@ mod tests {
     }
 
     #[test]
-    fn typeof_is_table_for_plain_table_with_metatable() {
+    fn get_type_is_table_for_plain_table_with_metatable() {
         assert_eq!(
             eval_string(
                 r#"
                 local t = setmetatable({}, { __index = function() end })
-                return typeof(t)
+                return GetType(t)
                 "#
             ),
             "table"
@@ -1020,7 +1020,7 @@ mod tests {
     }
 
     #[test]
-    fn typeof_uses_type_marker() {
+    fn get_type_uses_type_marker() {
         assert_eq!(
             eval_string(
                 r#"
@@ -1033,10 +1033,24 @@ mod tests {
                     __construct = function(self, t) self.t = t end,
                 })
                 local f = BuildClassData(F, "z")
-                return typeof(a) .. "," .. typeof(f) .. "," .. typeof({}) .. "," .. typeof(5)
+                return GetType(a) .. "," .. GetType(f) .. "," .. GetType({}) .. "," .. GetType(5)
                 "#
             ),
             "Widget,Tag:z,table,number"
+        );
+    }
+
+    #[test]
+    fn typeof_is_left_native() {
+        assert_eq!(
+            eval_string(
+                r#"
+                local C = NewClassData({ Public = {}, __type = "Widget", __construct = function() end })
+                local a = BuildClassData(C)
+                return typeof(a) .. "," .. typeof(C)
+                "#
+            ),
+            "table,table"
         );
     }
 

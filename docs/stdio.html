@@ -36,7 +36,7 @@
 <div class="codeblock"><pre><code class="language-luau">--#include[stdio]</code></pre></div>
 
 <h2>Writing</h2>
-<p><code>stdio.write(...)</code> prints its arguments to standard output. <code>stdio.ewrite(...)</code> does the same on standard error, the stream terminals set aside for warnings and error messages. Both accept any mix of strings, numbers, and booleans, join them with nothing in between, and add no newline at the end. Anything else, like a table or <code>nil</code>, raises a Lua error. <code>stdio.writeLine(...)</code> and <code>stdio.ewriteLine(...)</code> are the same but finish with a newline.</p>
+<p><code>stdio.write(...)</code> prints its arguments to standard output. <code>stdio.ewrite(...)</code> does the same on standard error, the stream terminals set aside for warnings and error messages. Both accept any mix of strings, numbers, and booleans, join them with nothing in between, and add no newline at the end. A value with a <a href="metamethods.html">__toconsole</a> is rendered through it, the same as <code>print</code>. Anything else, like a plain table or <code>nil</code>, raises a Lua error. <code>stdio.writeLine(...)</code> and <code>stdio.ewriteLine(...)</code> are the same but finish with a newline.</p>
 <p>Compare with <code>print</code>, which puts a space between values and a newline at the end. With <code>write</code> you place every character yourself, which is exactly what you want for progress output and colored text.</p>
 <p>Two helpers tidy the screen: <code>stdio.clear()</code> wipes the whole terminal and moves the cursor to the top left, and <code>stdio.clearLine()</code> erases the current line and returns the cursor to its start, which is handy for progress counters that redraw in place.</p>
 

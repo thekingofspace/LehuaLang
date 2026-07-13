@@ -30,9 +30,9 @@
     <article class="doc-page">
       <p class="eyebrow">Guides</p>
       <h1>Classes</h1>
-      <p>Lehua has a small class system built into the runtime. Every module can use it with no include and no import. You describe a class with <code>NewClassData</code>, then stamp out objects from it with <code>BuildClassData</code>. A class separates private state from a public surface, holds static members that live on the class itself, supports single and multiple inheritance, checks interfaces, and lets you customize <code>typeof</code> and how an object prints.</p>
+      <p>Lehua has a small class system built into the runtime. Every module can use it with no include and no import. You describe a class with <code>NewClassData</code>, then stamp out objects from it with <code>BuildClassData</code>. A class separates private state from a public surface, holds static members that live on the class itself, supports single and multiple inheritance, checks interfaces, and gives objects a custom type and a custom console form.</p>
 
-      <div class="note"><div class="note-title">The keywords</div><p>Six globals make up the system: <code>NewClassData</code>, <code>BuildClassData</code>, <code>SuperGet</code>, <code>Interface</code>, and <code>Implements</code>, plus a <code>typeof</code> that understands a <code>__type</code> field. They are always in scope, in the main VM and in every parallel worker.</p></div>
+      <div class="note"><div class="note-title">The keywords</div><p>Five globals make up the system: <code>NewClassData</code>, <code>BuildClassData</code>, <code>SuperGet</code>, <code>Interface</code>, and <code>Implements</code>. They are always in scope, in the main VM and in every parallel worker. A class's type is read with <a href="globals.html">GetType</a>, and its <code>__type</code> and <code>__toconsole</code> markers are covered in <a href="metamethods.html">Metamethods</a>.</p></div>
 
       <h2>Defining a class</h2>
       <p><code>NewClassData</code> takes one table that describes the class and returns a ClassData handle. The three field buckets are <code>Private</code>, <code>Public</code>, and <code>Static</code>. A <code>__construct</code> function runs when an object is built, and any <code>__</code> key becomes a metamethod on the built objects.</p>
@@ -104,41 +104,14 @@ Counter.Version = "2.0"
 print(c.Version)        -- 2.0, statics are shared</code></pre></div>
       <p>When a class inherits a static, that static keeps pointing back to the class that defined it. Reading or writing an inherited static goes to the origin class, so there is one shared value, not a copy per child.</p>
 
-      <h2>typeof and __type</h2>
-      <p>Lehua's <code>typeof</code> works exactly like the built-in for every value except a table that carries a <code>__type</code> marker. The marker can sit on the table directly or on its metatable, and it may be a string or a function that returns a string. Anything that is not a table, and any table without a marker, falls through to the normal <code>typeof</code>.</p>
-      <div class="codeblock"><pre><code class="language-luau">local Vec = NewClassData({
-    Private = { x = 0, y = 0 },
-    Public = {},
-    __type = "Vector",
-    __construct = function(self, x, y)
-        self.x, self.y = x, y
-    end,
-})
-
-print(typeof(BuildClassData(Vec, 1, 2))) -- Vector
-print(typeof(Vec))                       -- ClassData
-print(typeof(42))                        -- number
-print(typeof("hi"))                      -- string</code></pre></div>
-      <p>A function marker receives the object, so the type can depend on the object's state.</p>
-      <div class="codeblock"><pre><code class="language-luau">local Tagged = NewClassData({
-    Private = { tag = "?" },
-    Public = {},
-    __type = function(self)
-        return "Tagged:" .. self.tag
-    end,
-    __construct = function(self, tag)
-        self.tag = tag
-    end,
-})
-
-print(typeof(BuildClassData(Tagged, "widget"))) -- Tagged:widget</code></pre></div>
-
-      <h2>Printing with __toconsole</h2>
-      <p>Give a class a <code>__toconsole</code> and <code>print</code> uses it to show the object. It can be a string, or a function that receives the object and returns text. Without one, an object prints as its class name followed by its public data.</p>
-      <div class="codeblock"><pre><code class="language-luau">local Vec = NewClassData({
+      <h2>Custom type and printing</h2>
+      <p>A class spec can set <code>__type</code> to give its objects a custom type name, read by <a href="globals.html">GetType</a>, and <code>__toconsole</code> to control how they print. Each may be a string or a function that receives the object. Without a <code>__toconsole</code>, an object prints as its class name followed by its public data. See <a href="metamethods.html">Metamethods</a> for the full story, including how these markers work on any table.</p>
+      <div class="codeblock"><pre><code class="language-luau">local Vec
+Vec = NewClassData({
     Name = "Vec",
     Private = { x = 0, y = 0 },
     Public = {},
+    __type = "Vector",
     __toconsole = function(self)
         return "Vector(" .. self.x .. ", " .. self.y .. ")"
     end,
@@ -147,10 +120,12 @@ print(typeof(BuildClassData(Tagged, "widget"))) -- Tagged:widget</code></pre></d
     end,
 })
 
-print(BuildClassData(Vec, 1, 2)) -- Vector(1, 2)</code></pre></div>
+local v = BuildClassData(Vec, 1, 2)
+print(GetType(v)) -- Vector
+print(v)          -- Vector(1, 2)</code></pre></div>
 
       <h2>Metamethods</h2>
-      <p>Any <code>__</code> key other than <code>__construct</code> becomes a metamethod on built objects. Operators like <code>__add</code>, <code>__eq</code>, and <code>__tostring</code> all work, and each object argument arrives as its own <code>self</code>, so a metamethod can read private state.</p>
+      <p>Any <code>__</code> key other than <code>__construct</code> becomes a metamethod on built objects. Operators like <code>__add</code>, <code>__eq</code>, and <code>__tostring</code> all work, and each object argument arrives as its own <code>self</code>, so a metamethod can read private state. See <a href="metamethods.html">Metamethods</a> for the full set.</p>
       <div class="codeblock"><pre><code class="language-luau">local Vec
 Vec = NewClassData({
     Private = { x = 0, y = 0 },
@@ -255,7 +230,6 @@ print(Implements(c, Interface({ "X" }))) -- false</code></pre></div>
       <tr><td><code>SuperGet</code></td><td><code>SuperGet(class, key)</code></td><td>The raw member for that key, to call with an explicit <code>self</code>.</td></tr>
       <tr><td><code>Interface</code></td><td><code>Interface(spec)</code></td><td>An interface value listing required member names.</td></tr>
       <tr><td><code>Implements</code></td><td><code>Implements(value, interface)</code></td><td><code>true</code> if the object or class provides every required member.</td></tr>
-      <tr><td><code>typeof</code></td><td><code>typeof(value)</code></td><td>The <code>__type</code> marker for a marked table, otherwise the normal type.</td></tr>
       </tbody>
       </table>
       <div class="note"><div class="note-title">Errors</div><p>Misusing the class functions raises Lua errors: reading or writing a private field from outside, passing a non-class to <code>BuildClassData</code> or <code>SuperGet</code>, clashing inherited names, or missing an interface member. Wrap a call in <code>pcall</code> when you want to handle these yourself.</p></div>

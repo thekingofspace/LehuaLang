@@ -22,6 +22,8 @@
       { t: "Modules and require", h: "modules.html" },
       { t: "Roots", h: "roots.html" },
       { t: "Classes", h: "classes.html" },
+      { t: "Metamethods", h: "metamethods.html" },
+      { t: "Globals", h: "globals.html" },
       { t: "Including libraries", h: "libraries.html" },
       { t: "Parallel", h: "parallel.html" },
       { t: "Messenger", h: "messenger.html" },
@@ -204,7 +206,7 @@
 
   // ---- Syntax highlighting ----
   var LUAU_KW = "local function end if then else elseif for in do while repeat until return break continue and or not nil true false type export".split(" ");
-  var LUAU_GLOBAL = "require parallel channel messenger __dirname __filename fs process serde cryptography datetime regex stdio luau url semver archive sqlite mongo net random task canvas cache dll buffer print assert pcall error tostring tonumber pairs ipairs select typeof NewClassData BuildClassData SuperGet Interface Implements".split(" ");
+  var LUAU_GLOBAL = "require parallel channel messenger __dirname __filename fs process serde cryptography datetime regex stdio luau url semver archive sqlite mongo net random task canvas cache dll buffer print assert pcall error tostring tonumber pairs ipairs select typeof GetType NewClassData BuildClassData SuperGet Interface Implements".split(" ");
   var kw = {}, gl = {};
   LUAU_KW.forEach(function (w) { kw[w] = 1; });
   LUAU_GLOBAL.forEach(function (w) { gl[w] = 1; });

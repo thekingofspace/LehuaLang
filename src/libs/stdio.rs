@@ -1,12 +1,22 @@
 use std::io::{BufRead, IsTerminal, Read, Write};
 
-use mlua::{Value, Variadic};
+use mlua::{Function, Lua, Value, Variadic};
 
 use super::LibCtx;
 use crate::error::LehuaError;
 
-fn write_values(out: &mut dyn Write, args: &Variadic<Value>, newline: bool) -> mlua::Result<()> {
+fn write_values(
+    lua: &Lua,
+    out: &mut dyn Write,
+    args: &Variadic<Value>,
+    newline: bool,
+) -> mlua::Result<()> {
+    let tostring: Function = lua.globals().get("tostring")?;
     for a in args.iter() {
+        if let Some(text) = crate::engine::toconsole_bytes(&tostring, a)? {
+            out.write_all(&text).map_err(mlua::Error::external)?;
+            continue;
+        }
         match a {
             Value::String(s) => out.write_all(&s.as_bytes()).map_err(mlua::Error::external)?,
             Value::Integer(i) => out
@@ -398,29 +408,29 @@ pub fn build(ctx: &LibCtx) -> mlua::Result<Value> {
 
     t.set(
         "write",
-        lua.create_function(|_, args: Variadic<Value>| {
-            write_values(&mut std::io::stdout().lock(), &args, false)
+        lua.create_function(|lua, args: Variadic<Value>| {
+            write_values(lua, &mut std::io::stdout().lock(), &args, false)
         })?,
     )?;
 
     t.set(
         "ewrite",
-        lua.create_function(|_, args: Variadic<Value>| {
-            write_values(&mut std::io::stderr().lock(), &args, false)
+        lua.create_function(|lua, args: Variadic<Value>| {
+            write_values(lua, &mut std::io::stderr().lock(), &args, false)
         })?,
     )?;
 
     t.set(
         "writeLine",
-        lua.create_function(|_, args: Variadic<Value>| {
-            write_values(&mut std::io::stdout().lock(), &args, true)
+        lua.create_function(|lua, args: Variadic<Value>| {
+            write_values(lua, &mut std::io::stdout().lock(), &args, true)
         })?,
     )?;
 
     t.set(
         "ewriteLine",
-        lua.create_function(|_, args: Variadic<Value>| {
-            write_values(&mut std::io::stderr().lock(), &args, true)
+        lua.create_function(|lua, args: Variadic<Value>| {
+            write_values(lua, &mut std::io::stderr().lock(), &args, true)
         })?,
     )?;
 

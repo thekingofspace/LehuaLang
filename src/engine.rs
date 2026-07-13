@@ -477,7 +477,7 @@ fn format_value(
             }
         }
         Value::Table(t) => {
-            if let Some(text) = console_repr(tostring, t, v)? {
+            if let Some(text) = toconsole_bytes(tostring, v)? {
                 out.extend_from_slice(&text);
             } else if has_custom_tostring(t) {
                 let text = tostring.call::<mlua::LuaString>(v.clone())?;
@@ -514,17 +514,23 @@ fn has_custom_tostring(t: &mlua::Table) -> bool {
     }
 }
 
-fn console_repr(
-    tostring: &Function,
-    t: &mlua::Table,
-    v: &Value,
-) -> mlua::Result<Option<Vec<u8>>> {
-    let mt = match t.metatable() {
-        Some(mt) => mt,
-        None => return Ok(None),
+fn console_field(t: &mlua::Table) -> mlua::Result<Value> {
+    let direct: Value = t.raw_get("__toconsole")?;
+    if !direct.is_nil() {
+        return Ok(direct);
+    }
+    match t.metatable() {
+        Some(mt) => mt.raw_get("__toconsole"),
+        None => Ok(Value::Nil),
+    }
+}
+
+pub fn toconsole_bytes(tostring: &Function, v: &Value) -> mlua::Result<Option<Vec<u8>>> {
+    let t = match v {
+        Value::Table(t) => t,
+        _ => return Ok(None),
     };
-    let field: Value = mt.raw_get("__toconsole")?;
-    match field {
+    match console_field(t)? {
         Value::Nil => Ok(None),
         Value::String(s) => Ok(Some(s.as_bytes().to_vec())),
         Value::Function(f) => {
@@ -955,4 +961,54 @@ fn make_require(lua: &Lua, ctx: Rc<VmContext>, from_id: &str) -> mlua::Result<Fu
         let from_id = from_id.clone();
         async move { require_impl(&lua, &ctx, &from_id, &request).await }
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn render(lua: &Lua, src: &str) -> String {
+        let tostring: Function = lua.globals().get("tostring").unwrap();
+        let value: Value = lua.load(src).eval().unwrap();
+        let mut out = Vec::new();
+        format_value(&tostring, &value, &mut out, 0, &mut Vec::new(), false).unwrap();
+        String::from_utf8(out).unwrap()
+    }
+
+    #[test]
+    fn toconsole_from_metatable_function() {
+        let lua = Lua::new();
+        assert_eq!(
+            render(&lua, r#"return setmetatable({}, { __toconsole = function() return "mt-fn" end })"#),
+            "mt-fn"
+        );
+    }
+
+    #[test]
+    fn toconsole_from_metatable_string() {
+        let lua = Lua::new();
+        assert_eq!(
+            render(&lua, r#"return setmetatable({}, { __toconsole = "mt-str" })"#),
+            "mt-str"
+        );
+    }
+
+    #[test]
+    fn toconsole_from_direct_field() {
+        let lua = Lua::new();
+        assert_eq!(
+            render(&lua, r#"return { __toconsole = "direct" }"#),
+            "direct"
+        );
+        assert_eq!(
+            render(&lua, r#"local t = {} t.__toconsole = function() return "direct-fn" end return t"#),
+            "direct-fn"
+        );
+    }
+
+    #[test]
+    fn plain_table_without_toconsole_formats_normally() {
+        let lua = Lua::new();
+        assert_eq!(render(&lua, r#"return {}"#), "{}");
+    }
 }
