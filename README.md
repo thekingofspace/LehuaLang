@@ -1,5 +1,7 @@
 # Lehua
 
+*I am not the best writer so I will say Claude was used to write the docs and this readme. I feel it is important to state any AI use. Code however is by me with very little AI assitance.*
+
 Lehua is a runtime for Luau. You write Luau, run it right away, and build it into
 one small program that runs on its own.
 
