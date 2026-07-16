@@ -68,7 +68,8 @@ print(__dirname)  -- the folder that holds it</code></pre></div>
       <table>
       <thead><tr><th>Global</th><th>Signature</th><th>Description</th></tr></thead>
       <tbody>
-      <tr><td><code>GetType</code></td><td><code>GetType(value): string</code></td><td>The <code>__type</code> marker for a marked table, otherwise the normal type. Always a plain string.</td></tr>
+      <tr><td><code>GetType</code></td><td><code>GetType(value): string</code></td><td>The <code>__type</code> marker for a marked table, otherwise the normal type. Always a plain string. Objects of a named class report the class name by default.</td></tr>
+      <tr><td><code>IsA</code></td><td><code>IsA(value, class): boolean</code></td><td><code>true</code> if the value is an object of the class or of a descendant, or a class that inherits it. See <a href="classes.html">Classes</a>.</td></tr>
       <tr><td><code>print</code></td><td><code>print(...): ()</code></td><td>Pretty-print values to standard output, honoring <code>__toconsole</code>.</td></tr>
       <tr><td><code>__dirname</code></td><td><code>string</code></td><td>Absolute path of the current module's folder.</td></tr>
       <tr><td><code>__filename</code></td><td><code>string</code></td><td>Absolute path of the current module's file.</td></tr>

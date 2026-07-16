@@ -335,7 +335,7 @@ fn execute_bundle(
         .build()?;
 
     let local = tokio::task::LocalSet::new();
-    rt.block_on(local.run_until(async move {
+    let result = rt.block_on(local.run_until(async move {
         let (lua, ctx) = engine::make_vm(engine.clone())?;
         let arg_values: Vec<PortableValue> = args
             .into_iter()
@@ -343,7 +343,11 @@ fn execute_bundle(
             .collect();
         engine::run_entry(lua, ctx, &engine.entry_id, None, arg_values).await?;
         Ok::<(), LehuaError>(())
-    }))
+    }));
+    crate::parallel::shutdown_all();
+    drop(local);
+    rt.shutdown_background();
+    result
 }
 
 fn load_project(path: Option<String>) -> Result<(PathBuf, BuildManifest, LuauRc)> {

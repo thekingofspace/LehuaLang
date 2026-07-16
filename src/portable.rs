@@ -13,6 +13,8 @@ pub enum PortableValue {
     Int(i64),
     Num(f64),
     Str(Vec<u8>),
+    Buffer(Vec<u8>),
+    Vec3(f32, f32, f32),
     Array(Vec<PortableValue>),
     Map(Vec<(PortableValue, PortableValue)>),
     #[cfg(feature = "lib-cache")]
@@ -79,8 +81,8 @@ impl PortableValue {
             #[cfg(not(feature = "lib-cache"))]
             Value::UserData(_) => return Err(LehuaError::NotPortable("userdata")),
             Value::LightUserData(_) => return Err(LehuaError::NotPortable("lightuserdata")),
-            Value::Buffer(_) => return Err(LehuaError::NotPortable("buffer")),
-            Value::Vector(_) => return Err(LehuaError::NotPortable("vector")),
+            Value::Buffer(b) => PortableValue::Buffer(b.to_vec()),
+            Value::Vector(vec) => PortableValue::Vec3(vec.x(), vec.y(), vec.z()),
             Value::Error(_) => return Err(LehuaError::NotPortable("error")),
             _ => return Err(LehuaError::NotPortable("unsupported")),
         })
@@ -96,6 +98,8 @@ impl PortableValue {
             },
             PortableValue::Num(n) => Value::Number(n),
             PortableValue::Str(bytes) => Value::String(lua.create_string(&bytes)?),
+            PortableValue::Buffer(bytes) => Value::Buffer(lua.create_buffer(&bytes)?),
+            PortableValue::Vec3(x, y, z) => Value::Vector(mlua::Vector::new(x, y, z)),
             PortableValue::Array(items) => {
                 let t = lua.create_table_with_capacity(items.len(), 0)?;
                 for (i, item) in items.into_iter().enumerate() {
@@ -123,6 +127,15 @@ impl PortableValue {
             PortableValue::Int(i) => J::Number((*i).into()),
             PortableValue::Num(n) => serde_json::Number::from_f64(*n).map(J::Number).unwrap_or(J::Null),
             PortableValue::Str(b) => J::String(String::from_utf8_lossy(b).into_owned()),
+            PortableValue::Buffer(b) => J::String(base64::Engine::encode(
+                &base64::engine::general_purpose::STANDARD,
+                b,
+            )),
+            PortableValue::Vec3(x, y, z) => J::Array(vec![
+                serde_json::Number::from_f64(*x as f64).map(J::Number).unwrap_or(J::Null),
+                serde_json::Number::from_f64(*y as f64).map(J::Number).unwrap_or(J::Null),
+                serde_json::Number::from_f64(*z as f64).map(J::Number).unwrap_or(J::Null),
+            ]),
             PortableValue::Array(items) => J::Array(items.iter().map(|v| v.to_json()).collect()),
             PortableValue::Map(entries) => {
                 let mut obj = serde_json::Map::new();

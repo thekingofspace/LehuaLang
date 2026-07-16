@@ -46,7 +46,7 @@
       <p>A <code>Subscription</code> has <code>Unsubscribe()</code>, <code>Topic()</code>, and <code>IsActive()</code>.</p>
 
       <h2>Callbacks run at home</h2>
-      <p>When an event arrives, the callback runs in a fresh coroutine on the thread that subscribed, never on the publisher's thread. It can yield, use <code>task.wait</code>, do network calls, or publish again. Values travel like Port values: nil, booleans, numbers, strings, and plain tables, copied not shared. A <a href="cache.html">mem cache</a> handle also crosses, which is the door to sharing bigger state.</p>
+      <p>When an event arrives, the callback runs in a fresh coroutine on the thread that subscribed, never on the publisher's thread. It can yield, use <code>task.wait</code>, do network calls, or publish again. Values travel like Port values: nil, booleans, numbers, strings, buffers, vectors, and plain tables, copied not shared. A <a href="cache.html">mem cache</a> handle also crosses, which is the door to sharing bigger state.</p>
       <div class="codeblock"><div class="window-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="window-title">src/main.luau</span></div><pre><code class="language-luau">parallel("@self/shard.luau", 1)
 parallel("@self/shard.luau", 2)
 
@@ -70,6 +70,7 @@ messenger:Publish("shard-ready", id)</code></pre></div>
 
       <h2>Lifetime</h2>
       <p>A live subscription keeps its thread alive, the same way a bound heartbeat does: the program will not exit while something is still listening. Call <code>Unsubscribe()</code> when a subscription's work is done. Errors inside a callback are printed and do not affect the publisher or other subscribers.</p>
+      <p>When a program closes, its subscriptions close with it. A worker that the runtime shuts down, a program that calls <code>process.exit</code>, and a program that ends with an error all drop their subscriptions from the hub automatically, so publishers never count or deliver to listeners that are gone.</p>
       <div class="note"><div class="note-title">Serial too</div><p>Subscribing is not just for workers. The main thread can subscribe to its own topics, and a publish from the main thread reaches its own subscriptions as well - the callback still runs in its own coroutine, shortly after the publish returns.</p></div>
     </article>
   </main>

@@ -807,6 +807,7 @@ fn parse_noise_kind(name: Option<String>) -> mlua::Result<NoiseKind> {
     }
 }
 
+#[derive(Clone, Copy)]
 struct NoiseParams {
     seed: u64,
     scale: f64,
@@ -820,6 +821,32 @@ pub struct NoiseCore {
     perm: RefCell<[u8; 512]>,
     params: RefCell<NoiseParams>,
     warp: RefCell<Option<(Rc<NoiseCore>, f64)>>,
+}
+
+struct NoiseSpec {
+    perm: [u8; 512],
+    params: NoiseParams,
+    warp: Option<(Box<NoiseSpec>, f64)>,
+}
+
+fn snapshot_core(core: &NoiseCore) -> NoiseSpec {
+    NoiseSpec {
+        perm: *core.perm.borrow(),
+        params: *core.params.borrow(),
+        warp: core
+            .warp
+            .borrow()
+            .as_ref()
+            .map(|(c, s)| (Box::new(snapshot_core(c)), *s)),
+    }
+}
+
+fn rebuild_core(spec: NoiseSpec) -> Rc<NoiseCore> {
+    Rc::new(NoiseCore {
+        perm: RefCell::new(spec.perm),
+        params: RefCell::new(spec.params),
+        warp: RefCell::new(spec.warp.map(|(b, s)| (rebuild_core(*b), s))),
+    })
 }
 
 fn splitmix64(state: &mut u64) -> u64 {
@@ -1002,38 +1029,58 @@ fn apply_noise_params(core: &NoiseCore, opts: &Table) -> mlua::Result<()> {
     Ok(())
 }
 
-fn noise_fill(core: &NoiseCore, img: &mut RgbaImage, opts: Option<&Table>) -> mlua::Result<()> {
-    let mut off_x = 0.0f64;
-    let mut off_y = 0.0f64;
-    let mut stops: Option<Vec<GradientStop>> = None;
-    let mut alpha_only = false;
+struct NoiseFillOpts {
+    off_x: f64,
+    off_y: f64,
+    stops: Option<Vec<GradientStop>>,
+    alpha_only: bool,
+}
+
+fn parse_noise_fill_opts(opts: Option<&Table>) -> mlua::Result<NoiseFillOpts> {
+    let mut out = NoiseFillOpts {
+        off_x: 0.0,
+        off_y: 0.0,
+        stops: None,
+        alpha_only: false,
+    };
     if let Some(o) = opts {
         if let Some(x) = o.get::<Option<f64>>("x")? {
-            off_x = x;
+            out.off_x = x;
         }
         if let Some(y) = o.get::<Option<f64>>("y")? {
-            off_y = y;
+            out.off_y = y;
         }
         let stop_value: Value = o.get("stops")?;
         if !stop_value.is_nil() {
-            stops = Some(parse_stops(&stop_value)?);
+            out.stops = Some(parse_stops(&stop_value)?);
         }
         if let Some(a) = o.get::<Option<bool>>("alpha")? {
-            alpha_only = a;
+            out.alpha_only = a;
         }
     }
+    Ok(out)
+}
+
+fn noise_fill_raw(core: &NoiseCore, img: &mut RgbaImage, opts: &NoiseFillOpts) {
     for (x, y, p) in img.enumerate_pixels_mut() {
-        let v = core.sample(x as f64 + off_x, y as f64 + off_y);
-        if alpha_only {
+        let v = core.sample(x as f64 + opts.off_x, y as f64 + opts.off_y);
+        if opts.alpha_only {
             p.0[3] = clamp_channel(v * 255.0);
-        } else if let Some(stops) = &stops {
+        } else if let Some(stops) = &opts.stops {
             *p = gradient_color(stops, v as f32);
         } else {
             let g = clamp_channel(v * 255.0);
             *p = Rgba([g, g, g, 255]);
         }
     }
-    Ok(())
+}
+
+async fn run_blocking<T: Send + 'static>(
+    f: impl FnOnce() -> mlua::Result<T> + Send + 'static,
+) -> mlua::Result<T> {
+    tokio::task::spawn_blocking(f)
+        .await
+        .map_err(|e| mlua::Error::external(LehuaError::msg(format!("canvas: join error: {e}"))))?
 }
 
 impl UserData for NoiseObj {
@@ -1065,6 +1112,17 @@ impl UserData for NoiseObj {
                     if std::ptr::eq(&*this.core, &*other.core) {
                         return Err(LehuaError::msg("a noise map cannot warp itself").into());
                     }
+                    let mut cur = Some(other.core.clone());
+                    while let Some(c) = cur {
+                        if std::ptr::eq(&*c, &*this.core) {
+                            return Err(LehuaError::msg(
+                                "warp would create a cycle between noise maps",
+                            )
+                            .into());
+                        }
+                        let next = c.warp.borrow().as_ref().map(|(n, _)| n.clone());
+                        cur = next;
+                    }
                     *this.core.warp.borrow_mut() = Some((other.core.clone(), strength));
                 }
                 Ok(ud)
@@ -1081,28 +1139,57 @@ impl UserData for NoiseObj {
             Ok(ud)
         });
 
-        m.add_method(
+        m.add_async_method(
             "fill",
             |_, this, (target, opts): (AnyUserData, Option<Table>)| {
-                let target = target
-                    .borrow::<Canvas>()
-                    .map_err(|_| LehuaError::msg("fill expects a canvas"))?;
-                noise_fill(&this.core, &mut target.img.borrow_mut(), opts.as_ref())?;
-                Ok(())
+                let spec = snapshot_core(&this.core);
+                let parsed = parse_noise_fill_opts(opts.as_ref());
+                async move {
+                    let parsed = parsed?;
+                    let mut img = {
+                        let target = target
+                            .borrow::<Canvas>()
+                            .map_err(|_| LehuaError::msg("fill expects a canvas"))?;
+                        let img = target.img.borrow().clone();
+                        img
+                    };
+                    let out = run_blocking(move || {
+                        let core = rebuild_core(spec);
+                        noise_fill_raw(&core, &mut img, &parsed);
+                        Ok(img)
+                    })
+                    .await?;
+                    let target = target
+                        .borrow::<Canvas>()
+                        .map_err(|_| LehuaError::msg("fill expects a canvas"))?;
+                    *target.img.borrow_mut() = out;
+                    Ok(())
+                }
             },
         );
 
-        m.add_method(
+        m.add_async_method(
             "image",
             |_, this, (w, h, opts): (u32, u32, Option<Table>)| {
-                if w == 0 || h == 0 || w > 16384 || h > 16384 {
-                    return Err(
-                        LehuaError::msg("image: size must be between 1x1 and 16384x16384").into(),
-                    );
+                let spec = snapshot_core(&this.core);
+                let parsed = parse_noise_fill_opts(opts.as_ref());
+                async move {
+                    if w == 0 || h == 0 || w > 16384 || h > 16384 {
+                        return Err(
+                            LehuaError::msg("image: size must be between 1x1 and 16384x16384")
+                                .into(),
+                        );
+                    }
+                    let parsed = parsed?;
+                    let img = run_blocking(move || {
+                        let core = rebuild_core(spec);
+                        let mut img = RgbaImage::new(w, h);
+                        noise_fill_raw(&core, &mut img, &parsed);
+                        Ok(img)
+                    })
+                    .await?;
+                    Ok(from_image(img))
                 }
-                let mut img = RgbaImage::new(w, h);
-                noise_fill(&this.core, &mut img, opts.as_ref())?;
-                Ok(from_image(img))
             },
         );
 
@@ -1979,42 +2066,59 @@ impl UserData for Canvas {
             },
         );
 
-        m.add_function(
+        m.add_async_function(
             "dropShadow",
-            |_, (ud, dx, dy, sigma, color, strength): (AnyUserData, i64, i64, f32, Option<Value>, Option<f64>)| {
-                {
+            |_, (ud, dx, dy, sigma, color, strength): (AnyUserData, i64, i64, f32, Option<Value>, Option<f64>)| async move {
+                let (src, c) = {
                     let this = borrow_canvas(&ud)?;
                     let c = opt_color(&color, Rgba([0, 0, 0, 255]))?;
                     let src = this.img.borrow().clone();
+                    (src, c)
+                };
+                let out = run_blocking(move || {
                     let shadow = shadow_layer(&src, dx, dy, sigma.max(0.0), c, strength.unwrap_or(1.0));
-                    under_composite(&mut this.img.borrow_mut(), shadow);
-                }
+                    let mut out = src;
+                    under_composite(&mut out, shadow);
+                    Ok(out)
+                })
+                .await?;
+                *borrow_canvas(&ud)?.img.borrow_mut() = out;
                 Ok(ud)
             },
         );
 
-        m.add_function(
+        m.add_async_function(
             "glow",
-            |_, (ud, sigma, color, strength): (AnyUserData, f32, Option<Value>, Option<f64>)| {
-                {
+            |_, (ud, sigma, color, strength): (AnyUserData, f32, Option<Value>, Option<f64>)| async move {
+                let (src, c) = {
                     let this = borrow_canvas(&ud)?;
                     let c = opt_color(&color, Rgba([255, 255, 255, 255]))?;
                     let src = this.img.borrow().clone();
+                    (src, c)
+                };
+                let out = run_blocking(move || {
                     let shadow = shadow_layer(&src, 0, 0, sigma.max(0.5), c, strength.unwrap_or(2.0));
-                    under_composite(&mut this.img.borrow_mut(), shadow);
-                }
+                    let mut out = src;
+                    under_composite(&mut out, shadow);
+                    Ok(out)
+                })
+                .await?;
+                *borrow_canvas(&ud)?.img.borrow_mut() = out;
                 Ok(ud)
             },
         );
 
-        m.add_function(
+        m.add_async_function(
             "outline",
-            |_, (ud, color, radius): (AnyUserData, Value, Option<u32>)| {
-                {
+            |_, (ud, color, radius): (AnyUserData, Value, Option<u32>)| async move {
+                let (src, c) = {
                     let this = borrow_canvas(&ud)?;
                     let c = parse_color(&color)?;
-                    let radius = radius.unwrap_or(1).clamp(1, 16);
                     let src = this.img.borrow().clone();
+                    (src, c)
+                };
+                let radius = radius.unwrap_or(1).clamp(1, 16);
+                let out = run_blocking(move || {
                     let dilated = dilate_alpha(&src, radius);
                     let (w, h) = src.dimensions();
                     let mut under = RgbaImage::new(w, h);
@@ -2022,32 +2126,38 @@ impl UserData for Canvas {
                         let a = dilated[(y * w + x) as usize] as u32 * c.0[3] as u32 / 255;
                         *p = Rgba([c.0[0], c.0[1], c.0[2], a as u8]);
                     }
-                    under_composite(&mut this.img.borrow_mut(), under);
-                }
+                    let mut out = src;
+                    under_composite(&mut out, under);
+                    Ok(out)
+                })
+                .await?;
+                *borrow_canvas(&ud)?.img.borrow_mut() = out;
                 Ok(ud)
             },
         );
 
-        m.add_function(
+        m.add_async_function(
             "resize",
-            |_, (ud, w, h, filter): (AnyUserData, u32, u32, Option<String>)| {
-                {
+            |_, (ud, w, h, filter): (AnyUserData, u32, u32, Option<String>)| async move {
+                let (src, f) = {
                     let this = borrow_canvas(&ud)?;
                     let f = filter_name(filter)?;
                     if w == 0 || h == 0 {
                         return Err(LehuaError::msg("resize: width and height must be at least 1").into());
                     }
-                    let resized = imageops::resize(&*this.img.borrow(), w, h, f);
-                    *this.img.borrow_mut() = resized;
-                }
+                    let src = this.img.borrow().clone();
+                    (src, f)
+                };
+                let resized = run_blocking(move || Ok(imageops::resize(&src, w, h, f))).await?;
+                *borrow_canvas(&ud)?.img.borrow_mut() = resized;
                 Ok(ud)
             },
         );
 
-        m.add_function(
+        m.add_async_function(
             "scale",
-            |_, (ud, factor, filter): (AnyUserData, f64, Option<String>)| {
-                {
+            |_, (ud, factor, filter): (AnyUserData, f64, Option<String>)| async move {
+                let (src, f, nw, nh) = {
                     let this = borrow_canvas(&ud)?;
                     if factor <= 0.0 {
                         return Err(LehuaError::msg("scale: factor must be positive").into());
@@ -2056,26 +2166,27 @@ impl UserData for Canvas {
                     let (w, h) = this.img.borrow().dimensions();
                     let nw = ((w as f64 * factor).round() as u32).max(1);
                     let nh = ((h as f64 * factor).round() as u32).max(1);
-                    let resized = imageops::resize(&*this.img.borrow(), nw, nh, f);
-                    *this.img.borrow_mut() = resized;
-                }
+                    let src = this.img.borrow().clone();
+                    (src, f, nw, nh)
+                };
+                let resized = run_blocking(move || Ok(imageops::resize(&src, nw, nh, f))).await?;
+                *borrow_canvas(&ud)?.img.borrow_mut() = resized;
                 Ok(ud)
             },
         );
 
-        m.add_function("thumbnail", |_, (ud, w, h): (AnyUserData, u32, u32)| {
-            {
-                let this = borrow_canvas(&ud)?;
-                let small = imageops::thumbnail(&*this.img.borrow(), w.max(1), h.max(1));
-                *this.img.borrow_mut() = small;
-            }
+        m.add_async_function("thumbnail", |_, (ud, w, h): (AnyUserData, u32, u32)| async move {
+            let src = borrow_canvas(&ud)?.img.borrow().clone();
+            let small =
+                run_blocking(move || Ok(imageops::thumbnail(&src, w.max(1), h.max(1)))).await?;
+            *borrow_canvas(&ud)?.img.borrow_mut() = small;
             Ok(ud)
         });
 
-        m.add_function(
+        m.add_async_function(
             "fit",
-            |_, (ud, w, h, background, filter): (AnyUserData, u32, u32, Option<Value>, Option<String>)| {
-                {
+            |_, (ud, w, h, background, filter): (AnyUserData, u32, u32, Option<Value>, Option<String>)| async move {
+                let (src, f, bg) = {
                     let this = borrow_canvas(&ud)?;
                     if w == 0 || h == 0 || w > 16384 || h > 16384 {
                         return Err(
@@ -2085,6 +2196,9 @@ impl UserData for Canvas {
                     let f = filter_name(filter)?;
                     let bg = opt_color(&background, Rgba([0, 0, 0, 0]))?;
                     let src = this.img.borrow().clone();
+                    (src, f, bg)
+                };
+                let out = run_blocking(move || {
                     let (sw, sh) = src.dimensions();
                     let ratio = (w as f64 / sw as f64).min(h as f64 / sh as f64);
                     let nw = ((sw as f64 * ratio).round() as u32).clamp(1, w);
@@ -2097,16 +2211,18 @@ impl UserData for Canvas {
                         let dp = *out.get_pixel(ox + x, oy + y);
                         out.put_pixel(ox + x, oy + y, composite_pixel(dp, *sp, Blend::Normal, 1.0));
                     }
-                    *this.img.borrow_mut() = out;
-                }
+                    Ok(out)
+                })
+                .await?;
+                *borrow_canvas(&ud)?.img.borrow_mut() = out;
                 Ok(ud)
             },
         );
 
-        m.add_function(
+        m.add_async_function(
             "cover",
-            |_, (ud, w, h, filter): (AnyUserData, u32, u32, Option<String>)| {
-                {
+            |_, (ud, w, h, filter): (AnyUserData, u32, u32, Option<String>)| async move {
+                let (src, f) = {
                     let this = borrow_canvas(&ud)?;
                     if w == 0 || h == 0 || w > 16384 || h > 16384 {
                         return Err(
@@ -2115,6 +2231,9 @@ impl UserData for Canvas {
                     }
                     let f = filter_name(filter)?;
                     let src = this.img.borrow().clone();
+                    (src, f)
+                };
+                let out = run_blocking(move || {
                     let (sw, sh) = src.dimensions();
                     let ratio = (w as f64 / sw as f64).max(h as f64 / sh as f64);
                     let nw = ((sw as f64 * ratio).round() as u32).max(w);
@@ -2122,9 +2241,10 @@ impl UserData for Canvas {
                     let resized = imageops::resize(&src, nw, nh, f);
                     let ox = (nw - w) / 2;
                     let oy = (nh - h) / 2;
-                    let out = imageops::crop_imm(&resized, ox, oy, w, h).to_image();
-                    *this.img.borrow_mut() = out;
-                }
+                    Ok(imageops::crop_imm(&resized, ox, oy, w, h).to_image())
+                })
+                .await?;
+                *borrow_canvas(&ud)?.img.borrow_mut() = out;
                 Ok(ud)
             },
         );
@@ -2175,20 +2295,25 @@ impl UserData for Canvas {
             Ok(ud)
         });
 
-        m.add_function(
+        m.add_async_function(
             "rotate",
-            |_, (ud, degrees, background): (AnyUserData, f32, Option<Value>)| {
-                {
+            |_, (ud, degrees, background): (AnyUserData, f32, Option<Value>)| async move {
+                let (src, bg) = {
                     let this = borrow_canvas(&ud)?;
                     let bg = opt_color(&background, Rgba([0, 0, 0, 0]))?;
-                    let rotated = rotate_about_center(
-                        &*this.img.borrow(),
+                    let src = this.img.borrow().clone();
+                    (src, bg)
+                };
+                let rotated = run_blocking(move || {
+                    Ok(rotate_about_center(
+                        &src,
                         degrees.to_radians(),
                         Interpolation::Bilinear,
                         bg,
-                    );
-                    *this.img.borrow_mut() = rotated;
-                }
+                    ))
+                })
+                .await?;
+                *borrow_canvas(&ud)?.img.borrow_mut() = rotated;
                 Ok(ud)
             },
         );
@@ -2377,28 +2502,29 @@ impl UserData for Canvas {
             Ok(ud)
         });
 
-        m.add_function("blur", |_, (ud, sigma): (AnyUserData, f32)| {
-            {
-                let this = borrow_canvas(&ud)?;
-                let blurred =
-                    imageproc::filter::gaussian_blur_f32(&*this.img.borrow(), sigma.max(0.01));
-                *this.img.borrow_mut() = blurred;
-            }
+        m.add_async_function("blur", |_, (ud, sigma): (AnyUserData, f32)| async move {
+            let src = borrow_canvas(&ud)?.img.borrow().clone();
+            let blurred = run_blocking(move || {
+                Ok(imageproc::filter::gaussian_blur_f32(&src, sigma.max(0.01)))
+            })
+            .await?;
+            *borrow_canvas(&ud)?.img.borrow_mut() = blurred;
             Ok(ud)
         });
 
-        m.add_function(
+        m.add_async_function(
             "sharpen",
-            |_, (ud, sigma, threshold): (AnyUserData, Option<f32>, Option<i32>)| {
-                {
-                    let this = borrow_canvas(&ud)?;
-                    let sharpened = imageops::unsharpen(
-                        &*this.img.borrow(),
+            |_, (ud, sigma, threshold): (AnyUserData, Option<f32>, Option<i32>)| async move {
+                let src = borrow_canvas(&ud)?.img.borrow().clone();
+                let sharpened = run_blocking(move || {
+                    Ok(imageops::unsharpen(
+                        &src,
                         sigma.unwrap_or(1.0).max(0.01),
                         threshold.unwrap_or(0),
-                    );
-                    *this.img.borrow_mut() = sharpened;
-                }
+                    ))
+                })
+                .await?;
+                *borrow_canvas(&ud)?.img.borrow_mut() = sharpened;
                 Ok(ud)
             },
         );
@@ -2508,20 +2634,20 @@ impl UserData for Canvas {
             },
         );
 
-        m.add_function("emboss", |_, ud: AnyUserData| {
-            {
-                let this = borrow_canvas(&ud)?;
+        m.add_async_function("emboss", |_, ud: AnyUserData| async move {
+            let src = borrow_canvas(&ud)?.img.borrow().clone();
+            let out = run_blocking(move || {
                 let kernel = [-2.0, -1.0, 0.0, -1.0, 1.0, 1.0, 0.0, 1.0, 2.0];
-                let out = convolve3x3(&this.img.borrow(), kernel, 0.0);
-                *this.img.borrow_mut() = out;
-            }
+                Ok(convolve3x3(&src, kernel, 0.0))
+            })
+            .await?;
+            *borrow_canvas(&ud)?.img.borrow_mut() = out;
             Ok(ud)
         });
 
-        m.add_function("edges", |_, ud: AnyUserData| {
-            {
-                let this = borrow_canvas(&ud)?;
-                let src = this.img.borrow().clone();
+        m.add_async_function("edges", |_, ud: AnyUserData| async move {
+            let src = borrow_canvas(&ud)?.img.borrow().clone();
+            let out = run_blocking(move || {
                 let gx = convolve3x3(&src, [-1.0, 0.0, 1.0, -2.0, 0.0, 2.0, -1.0, 0.0, 1.0], 0.0);
                 let gy = convolve3x3(&src, [-1.0, -2.0, -1.0, 0.0, 0.0, 0.0, 1.0, 2.0, 1.0], 0.0);
                 let mut out = src;
@@ -2533,24 +2659,29 @@ impl UserData for Canvas {
                         p.0[i] = clamp_channel(v);
                     }
                 }
-                *this.img.borrow_mut() = out;
-            }
+                Ok(out)
+            })
+            .await?;
+            *borrow_canvas(&ud)?.img.borrow_mut() = out;
             Ok(ud)
         });
 
-        m.add_function(
+        m.add_async_function(
             "convolve",
-            |_, (ud, kernel, bias): (AnyUserData, Vec<f64>, Option<f64>)| {
-                {
+            |_, (ud, kernel, bias): (AnyUserData, Vec<f64>, Option<f64>)| async move {
+                let (src, k) = {
                     let this = borrow_canvas(&ud)?;
                     if kernel.len() != 9 {
                         return Err(LehuaError::msg("convolve expects a 3x3 kernel of 9 numbers").into());
                     }
                     let mut k = [0.0f64; 9];
                     k.copy_from_slice(&kernel);
-                    let out = convolve3x3(&this.img.borrow(), k, bias.unwrap_or(0.0));
-                    *this.img.borrow_mut() = out;
-                }
+                    let src = this.img.borrow().clone();
+                    (src, k)
+                };
+                let out =
+                    run_blocking(move || Ok(convolve3x3(&src, k, bias.unwrap_or(0.0)))).await?;
+                *borrow_canvas(&ud)?.img.borrow_mut() = out;
                 Ok(ud)
             },
         );
@@ -3221,28 +3352,39 @@ impl UserData for Canvas {
             Ok(1.0 - total as f64 / max as f64)
         });
 
-        m.add_method("encode", |lua, this, (format, quality): (Option<String>, Option<u8>)| {
-            let fmt = format_from_name(format.as_deref().unwrap_or("png"))?;
-            let bytes = encode_image(&this.img.borrow(), fmt, quality)?;
-            lua.create_string(bytes)
-        });
+        m.add_async_method(
+            "encode",
+            |lua, this, (format, quality): (Option<String>, Option<u8>)| {
+                let fmt = format_from_name(format.as_deref().unwrap_or("png"));
+                let img = this.img.borrow().clone();
+                async move {
+                    let fmt = fmt?;
+                    let bytes = run_blocking(move || encode_image(&img, fmt, quality)).await?;
+                    lua.create_string(bytes)
+                }
+            },
+        );
 
-        m.add_method("dataUrl", |_, this, format: Option<String>| {
-            use base64::Engine;
+        m.add_async_method("dataUrl", |_, this, format: Option<String>| {
             let name = format.unwrap_or_else(|| "png".to_string());
-            let fmt = format_from_name(&name)?;
-            let bytes = encode_image(&this.img.borrow(), fmt, None)?;
-            let mime = match fmt {
-                ImageFormat::Jpeg => "image/jpeg",
-                ImageFormat::Gif => "image/gif",
-                ImageFormat::Bmp => "image/bmp",
-                ImageFormat::WebP => "image/webp",
-                _ => "image/png",
-            };
-            Ok(format!(
-                "data:{mime};base64,{}",
-                base64::engine::general_purpose::STANDARD.encode(bytes)
-            ))
+            let fmt = format_from_name(&name);
+            let img = this.img.borrow().clone();
+            async move {
+                use base64::Engine;
+                let fmt = fmt?;
+                let bytes = run_blocking(move || encode_image(&img, fmt, None)).await?;
+                let mime = match fmt {
+                    ImageFormat::Jpeg => "image/jpeg",
+                    ImageFormat::Gif => "image/gif",
+                    ImageFormat::Bmp => "image/bmp",
+                    ImageFormat::WebP => "image/webp",
+                    _ => "image/png",
+                };
+                Ok(format!(
+                    "data:{mime};base64,{}",
+                    base64::engine::general_purpose::STANDARD.encode(bytes)
+                ))
+            }
         });
 
         m.add_method(
@@ -3437,7 +3579,10 @@ pub fn build(ctx: &LibCtx) -> mlua::Result<Value> {
 
     t.set(
         "decode",
-        lua.create_function(|_, data: mlua::LuaString| decode_bytes(&data.as_bytes()))?,
+        lua.create_async_function(|_, data: mlua::LuaString| {
+            let bytes = data.as_bytes().to_vec();
+            async move { run_blocking(move || decode_bytes(&bytes)).await }
+        })?,
     )?;
 
     t.set(
@@ -3545,14 +3690,27 @@ pub fn build(ctx: &LibCtx) -> mlua::Result<Value> {
         let scope = Rc::clone(&scope);
         t.set(
             "font",
-            lua.create_function(move |_, path: String| {
-                let full = scope.resolve(&path)?;
-                let bytes = std::fs::read(&full).map_err(|e| {
-                    LehuaError::msg(format!("could not read font '{}': {e}", full.display()))
-                })?;
-                let font = FontVec::try_from_vec(bytes)
-                    .map_err(|_| LehuaError::msg(format!("'{}' is not a valid font", full.display())))?;
-                Ok(FontObj { font })
+            lua.create_async_function(move |_, path: String| {
+                let scope = scope.clone();
+                async move {
+                    let full = scope.resolve(&path)?;
+                    run_blocking(move || {
+                        let bytes = std::fs::read(&full).map_err(|e| {
+                            LehuaError::msg(format!(
+                                "could not read font '{}': {e}",
+                                full.display()
+                            ))
+                        })?;
+                        let font = FontVec::try_from_vec(bytes).map_err(|_| {
+                            LehuaError::msg(format!(
+                                "'{}' is not a valid font",
+                                full.display()
+                            ))
+                        })?;
+                        Ok(FontObj { font })
+                    })
+                    .await
+                }
             })?,
         )?;
     }

@@ -31,15 +31,18 @@ pub fn build(ctx: &LibCtx) -> mlua::Result<Value> {
         let scope = scope.clone();
         net.set(
             "sink",
-            lua.create_function(move |lua, opts: Option<Table>| {
-                let sink = match opts {
-                    Some(o) => match o.get::<Option<String>>("file")? {
-                        Some(path) => sink::new_file(scope.clone(), &path)?,
+            lua.create_async_function(move |lua, opts: Option<Table>| {
+                let scope = scope.clone();
+                async move {
+                    let sink = match opts {
+                        Some(o) => match o.get::<Option<String>>("file")? {
+                            Some(path) => sink::new_file(scope.clone(), &path).await?,
+                            None => sink::new_memory(scope.clone()),
+                        },
                         None => sink::new_memory(scope.clone()),
-                    },
-                    None => sink::new_memory(scope.clone()),
-                };
-                lua.create_userdata(sink)
+                    };
+                    lua.create_userdata(sink)
+                }
             })?,
         )?;
     }

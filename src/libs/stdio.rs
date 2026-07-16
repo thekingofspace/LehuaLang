@@ -62,6 +62,64 @@ fn read_line() -> mlua::Result<Option<Vec<u8>>> {
     Ok(Some(line))
 }
 
+async fn run_blocking<T: Send + 'static>(
+    f: impl FnOnce() -> mlua::Result<T> + Send + 'static,
+) -> mlua::Result<T> {
+    tokio::task::spawn_blocking(f)
+        .await
+        .map_err(|e| mlua::Error::external(LehuaError::msg(format!("stdio: join error: {e}"))))?
+}
+
+fn write_msg(text: &[u8]) -> mlua::Result<()> {
+    let mut out = std::io::stdout().lock();
+    out.write_all(text).map_err(mlua::Error::external)?;
+    out.flush().map_err(mlua::Error::external)?;
+    Ok(())
+}
+
+fn prompt_options(
+    message: Option<String>,
+    options: Vec<String>,
+) -> mlua::Result<Option<(String, usize)>> {
+    if std::io::stdin().is_terminal() && std::io::stdout().is_terminal() {
+        match select_menu(message.as_deref(), &options) {
+            Ok(Some(idx)) => return Ok(Some((options[idx].clone(), idx + 1))),
+            Ok(None) => return Ok(None),
+            Err(_) => {}
+        }
+    }
+    let mut menu = String::new();
+    if let Some(msg) = &message {
+        menu.push_str(msg);
+        if !menu.ends_with('\n') {
+            menu.push('\n');
+        }
+    }
+    for (i, opt) in options.iter().enumerate() {
+        menu.push_str(&format!("  {}) {opt}\n", i + 1));
+    }
+    write_msg(menu.as_bytes())?;
+    loop {
+        write_msg(b"> ")?;
+        let line = match read_line()? {
+            Some(line) => String::from_utf8_lossy(&line).trim().to_string(),
+            None => return Ok(None),
+        };
+        if let Ok(n) = line.parse::<usize>() {
+            if n >= 1 && n <= options.len() {
+                return Ok(Some((options[n - 1].clone(), n)));
+            }
+        }
+        if let Some(idx) = options
+            .iter()
+            .position(|o| o.eq_ignore_ascii_case(&line))
+        {
+            return Ok(Some((options[idx].clone(), idx + 1)));
+        }
+        write_msg(format!("pick 1-{}\n", options.len()).as_bytes())?;
+    }
+}
+
 enum Key {
     Up,
     Down,
@@ -436,97 +494,62 @@ pub fn build(ctx: &LibCtx) -> mlua::Result<Value> {
 
     t.set(
         "readLine",
-        lua.create_function(|lua, ()| match read_line()? {
-            Some(line) => Ok(Value::String(lua.create_string(line)?)),
-            None => Ok(Value::Nil),
+        lua.create_async_function(|lua, ()| async move {
+            match run_blocking(read_line).await? {
+                Some(line) => Ok(Value::String(lua.create_string(line)?)),
+                None => Ok(Value::Nil),
+            }
         })?,
     )?;
 
     t.set(
         "readAll",
-        lua.create_function(|lua, ()| {
-            let mut buf = Vec::new();
-            std::io::stdin()
-                .lock()
-                .read_to_end(&mut buf)
-                .map_err(mlua::Error::external)?;
+        lua.create_async_function(|lua, ()| async move {
+            let buf = run_blocking(|| {
+                let mut buf = Vec::new();
+                std::io::stdin()
+                    .lock()
+                    .read_to_end(&mut buf)
+                    .map_err(mlua::Error::external)?;
+                Ok(buf)
+            })
+            .await?;
             lua.create_string(buf)
         })?,
     )?;
 
     t.set(
         "prompt",
-        lua.create_function(
+        lua.create_async_function(
             |lua, (message, options): (Option<mlua::LuaString>, Option<Vec<String>>)| {
-                let write_msg = |text: &[u8]| -> mlua::Result<()> {
-                    let mut out = std::io::stdout().lock();
-                    out.write_all(text).map_err(mlua::Error::external)?;
-                    out.flush().map_err(mlua::Error::external)?;
-                    Ok(())
-                };
-                let options = match options {
-                    None => {
-                        if let Some(msg) = &message {
-                            write_msg(&msg.as_bytes())?;
-                        }
-                        return match read_line()? {
+                let message_bytes = message.as_ref().map(|m| m.as_bytes().to_vec());
+                let message_text = message.map(|m| m.to_string_lossy().to_string());
+                async move {
+                    let Some(options) = options else {
+                        let line = run_blocking(move || {
+                            if let Some(msg) = &message_bytes {
+                                write_msg(msg)?;
+                            }
+                            read_line()
+                        })
+                        .await?;
+                        return match line {
                             Some(line) => Ok((Value::String(lua.create_string(line)?), Value::Nil)),
                             None => Ok((Value::Nil, Value::Nil)),
                         };
-                    }
-                    Some(o) => o,
-                };
-                if options.is_empty() {
-                    return Err(LehuaError::msg("stdio.prompt: options list is empty").into());
-                }
-                let message = message.map(|m| m.to_string_lossy().to_string());
-                if std::io::stdin().is_terminal() && std::io::stdout().is_terminal() {
-                    match select_menu(message.as_deref(), &options) {
-                        Ok(Some(idx)) => {
-                            return Ok((
-                                Value::String(lua.create_string(&options[idx])?),
-                                Value::Integer((idx + 1) as i64),
-                            ))
-                        }
-                        Ok(None) => return Ok((Value::Nil, Value::Nil)),
-                        Err(_) => {}
-                    }
-                }
-                let mut menu = String::new();
-                if let Some(msg) = &message {
-                    menu.push_str(msg);
-                    if !menu.ends_with('\n') {
-                        menu.push('\n');
-                    }
-                }
-                for (i, opt) in options.iter().enumerate() {
-                    menu.push_str(&format!("  {}) {opt}\n", i + 1));
-                }
-                write_msg(menu.as_bytes())?;
-                loop {
-                    write_msg(b"> ")?;
-                    let line = match read_line()? {
-                        Some(line) => String::from_utf8_lossy(&line).trim().to_string(),
-                        None => return Ok((Value::Nil, Value::Nil)),
                     };
-                    if let Ok(n) = line.parse::<usize>() {
-                        if n >= 1 && n <= options.len() {
-                            return Ok((
-                                Value::String(lua.create_string(&options[n - 1])?),
-                                Value::Integer(n as i64),
-                            ));
-                        }
+                    if options.is_empty() {
+                        return Err(LehuaError::msg("stdio.prompt: options list is empty").into());
                     }
-                    if let Some(idx) = options
-                        .iter()
-                        .position(|o| o.eq_ignore_ascii_case(&line))
-                    {
-                        return Ok((
-                            Value::String(lua.create_string(&options[idx])?),
-                            Value::Integer((idx + 1) as i64),
-                        ));
+                    let picked =
+                        run_blocking(move || prompt_options(message_text, options)).await?;
+                    match picked {
+                        Some((text, n)) => Ok((
+                            Value::String(lua.create_string(&text)?),
+                            Value::Integer(n as i64),
+                        )),
+                        None => Ok((Value::Nil, Value::Nil)),
                     }
-                    write_msg(format!("pick 1-{}\n", options.len()).as_bytes())?;
                 }
             },
         )?,
@@ -607,7 +630,7 @@ pub fn build(ctx: &LibCtx) -> mlua::Result<Value> {
 
     t.set(
         "transcribe",
-        lua.create_function(|lua, f: mlua::Function| {
+        lua.create_async_function(|lua, f: mlua::Function| async move {
             let start = |lua: &mlua::Lua| -> mlua::Result<Option<Vec<u8>>> {
                 let cap = lua
                     .app_data_ref::<crate::engine::PrintCapture>()
@@ -631,9 +654,9 @@ pub fn build(ctx: &LibCtx) -> mlua::Result<Value> {
                     None => (Vec::new(), true),
                 }
             };
-            let prev = start(lua)?;
-            let result = f.call::<mlua::MultiValue>(());
-            let (buf, nested) = finish(lua, prev);
+            let prev = start(&lua)?;
+            let result = f.call_async::<mlua::MultiValue>(()).await;
+            let (buf, nested) = finish(&lua, prev);
             result?;
             if !nested {
                 let mut out = std::io::stdout().lock();

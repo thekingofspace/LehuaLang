@@ -391,6 +391,16 @@ impl VmScheduler {
             }
         }
     }
+
+    pub async fn run_close_async(&self) {
+        let handlers: Vec<Function> = std::mem::take(&mut self.close.borrow_mut());
+        let code = self.exit_code.get();
+        for f in handlers {
+            if let Err(e) = catch_panics(f.call_async::<()>(code)).await {
+                eprintln!("lehua: close handler error: {}", crate::error::pretty(&e));
+            }
+        }
+    }
 }
 
 pub fn make_vm(engine: Arc<Engine>) -> Result<(Lua, Rc<VmContext>)> {
@@ -658,12 +668,16 @@ pub async fn run_entry(
     match result {
         Ok(v) => {
             tokio::join!(heartbeat_loop(&ctx), ctx.sched.wait_idle());
-            ctx.sched.run_close();
+            lua.remove_interrupt();
+            ctx.sched.run_close_async().await;
+            crate::messenger::shutdown(&lua);
             Ok(v)
         }
         Err(e) => {
+            lua.remove_interrupt();
             ctx.sched.exit_code.set(1);
-            ctx.sched.run_close();
+            ctx.sched.run_close_async().await;
+            crate::messenger::shutdown(&lua);
             Err(e)
         }
     }

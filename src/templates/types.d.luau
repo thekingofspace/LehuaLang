@@ -995,6 +995,8 @@ declare function BuildClassData(class: ClassData, ...: any): any
 declare function SuperGet(class: ClassData, key: string): any
 declare function Interface(spec: InterfaceSpec): Interface
 declare function Implements(value: any, interface: Interface): boolean
+declare function IsA(value: any, class: ClassData): boolean
+declare function FetchClass(value: any): ClassData?
 declare function GetType(value: any): string
 
 declare __dirname: string

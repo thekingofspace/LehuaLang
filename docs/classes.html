@@ -32,7 +32,7 @@
       <h1>Classes</h1>
       <p>Lehua has a small class system built into the runtime. Every module can use it with no include and no import. You describe a class with <code>NewClassData</code>, then stamp out objects from it with <code>BuildClassData</code>. A class separates private state from a public surface, holds static members that live on the class itself, supports single and multiple inheritance, checks interfaces, and gives objects a custom type and a custom console form.</p>
 
-      <div class="note"><div class="note-title">The keywords</div><p>Five globals make up the system: <code>NewClassData</code>, <code>BuildClassData</code>, <code>SuperGet</code>, <code>Interface</code>, and <code>Implements</code>. They are always in scope, in the main VM and in every parallel worker. A class's type is read with <a href="globals.html">GetType</a>, and its <code>__type</code> and <code>__toconsole</code> markers are covered in <a href="metamethods.html">Metamethods</a>.</p></div>
+      <div class="note"><div class="note-title">The keywords</div><p>Seven globals make up the system: <code>NewClassData</code>, <code>BuildClassData</code>, <code>SuperGet</code>, <code>Interface</code>, <code>Implements</code>, <code>IsA</code>, and <code>FetchClass</code>. They are always in scope, in the main VM and in every parallel worker. A class's type is read with <a href="globals.html">GetType</a>, and its <code>__type</code> and <code>__toconsole</code> markers are covered in <a href="metamethods.html">Metamethods</a>.</p></div>
 
       <h2>Defining a class</h2>
       <p><code>NewClassData</code> takes one table that describes the class and returns a ClassData handle. The three field buckets are <code>Private</code>, <code>Public</code>, and <code>Static</code>. A <code>__construct</code> function runs when an object is built, and any <code>__</code> key becomes a metamethod on the built objects.</p>
@@ -75,7 +75,8 @@
       </table>
 
       <h2>Building objects</h2>
-      <p><code>BuildClassData</code> takes a class and any constructor arguments, and returns a fresh object. It deep-copies the <code>Private</code> and <code>Public</code> tables into the new object, so one object never shares state with another. Functions are shared by reference, but data, including nested tables, is copied.</p>
+      <p><code>BuildClassData</code> takes a class and any constructor arguments, and returns a fresh object. It deep-copies the <code>Private</code> and <code>Public</code> tables into the new object, so one object never shares state with another. Only data is copied: functions are shared by reference, every object of a class shares one metatable, and two objects of the same class hand out the very same method values, so building objects stays cheap no matter how many methods a class has.</p>
+      <div class="note"><div class="note-title">Methods can wait</div><p>Methods, constructors, and functions fetched through <code>SuperGet</code> run as ordinary Luau calls, so they can yield their coroutine freely: <code>coroutine.yield</code>, <code>task.wait</code>, network and database calls, and every other yielding builtin work inside them. While a method waits, the rest of the program keeps running.</p></div>
       <div class="codeblock"><pre><code class="language-luau">local a = BuildClassData(Counter, 10)
 local b = BuildClassData(Counter)
 
@@ -105,7 +106,7 @@ print(c.Version)        -- 2.0, statics are shared</code></pre></div>
       <p>When a class inherits a static, that static keeps pointing back to the class that defined it. Reading or writing an inherited static goes to the origin class, so there is one shared value, not a copy per child.</p>
 
       <h2>Custom type and printing</h2>
-      <p>A class spec can set <code>__type</code> to give its objects a custom type name, read by <a href="globals.html">GetType</a>, and <code>__toconsole</code> to control how they print. Each may be a string or a function that receives the object. Without a <code>__toconsole</code>, an object prints as its class name followed by its public data. See <a href="metamethods.html">Metamethods</a> for the full story, including how these markers work on any table.</p>
+      <p>A class spec can set <code>__type</code> to give its objects a custom type name, read by <a href="globals.html">GetType</a>, and <code>__toconsole</code> to control how they print. Each may be a string or a function that receives the object. A class with a <code>Name</code> and no explicit <code>__type</code> uses its name as the type automatically, so <code>GetType</code> on such an object returns the class name. Without a <code>__toconsole</code>, an object prints as its class name followed by its public data, and <code>tostring</code> produces the same text unless the class defines its own <code>__tostring</code>. See <a href="metamethods.html">Metamethods</a> for the full story, including how these markers work on any table.</p>
       <div class="codeblock"><pre><code class="language-luau">local Vec
 Vec = NewClassData({
     Name = "Vec",
@@ -221,6 +222,18 @@ print(Implements(c, IShape))            -- true
 print(Implements(c, Interface({ "X" }))) -- false</code></pre></div>
       <p><code>Implements(value, interface)</code> returns whether an object or a class provides every member the interface requires. It checks the public surface and statics.</p>
 
+      <h2>IsA and FetchClass</h2>
+      <p><code>IsA(value, class)</code> asks whether a value belongs to a class. It returns <code>true</code> for an object built from that class or from any class that inherits it, and works on class handles too, so <code>IsA(Child, Base)</code> checks the inheritance graph itself. Any non-class value, such as a plain table or a number, simply returns <code>false</code>.</p>
+      <p><code>FetchClass(value)</code> goes the other way: given a built object it returns the ClassData it was built from, so you can build more objects of the same kind or inspect its statics. A class handle returns itself, and anything else returns <code>nil</code>.</p>
+      <div class="codeblock"><pre><code class="language-luau">local Animal = NewClassData({ Name = "Animal", Public = {} })
+local Dog = NewClassData({ Name = "Dog", Inherits = Animal, Public = {} })
+
+local d = BuildClassData(Dog)
+print(IsA(d, Dog))     -- true
+print(IsA(d, Animal))  -- true
+print(IsA(Dog, Animal))-- true
+print(IsA({}, Animal)) -- false</code></pre></div>
+
       <h2>Reference</h2>
       <table>
       <thead><tr><th>Keyword</th><th>Signature</th><th>Returns</th></tr></thead>
@@ -230,6 +243,8 @@ print(Implements(c, Interface({ "X" }))) -- false</code></pre></div>
       <tr><td><code>SuperGet</code></td><td><code>SuperGet(class, key)</code></td><td>The raw member for that key, to call with an explicit <code>self</code>.</td></tr>
       <tr><td><code>Interface</code></td><td><code>Interface(spec)</code></td><td>An interface value listing required member names.</td></tr>
       <tr><td><code>Implements</code></td><td><code>Implements(value, interface)</code></td><td><code>true</code> if the object or class provides every required member.</td></tr>
+      <tr><td><code>IsA</code></td><td><code>IsA(value, class)</code></td><td><code>true</code> if the value is an object of the class, or the class or a descendant of it.</td></tr>
+      <tr><td><code>FetchClass</code></td><td><code>FetchClass(value)</code></td><td>The ClassData an object was built from, the class itself for a class, otherwise <code>nil</code>.</td></tr>
       </tbody>
       </table>
       <div class="note"><div class="note-title">Errors</div><p>Misusing the class functions raises Lua errors: reading or writing a private field from outside, passing a non-class to <code>BuildClassData</code> or <code>SuperGet</code>, clashing inherited names, or missing an interface member. Wrap a call in <code>pcall</code> when you want to handle these yourself.</p></div>

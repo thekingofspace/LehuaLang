@@ -41,6 +41,7 @@ struct Local {
     rx: Receiver<Event>,
     handlers: RefCell<HashMap<u64, Handler>>,
     pump_started: Cell<bool>,
+    closed: Cell<bool>,
 }
 
 impl Local {
@@ -50,6 +51,29 @@ impl Local {
             hub().lock().unwrap().retain(|e| e.id != id);
         }
         removed
+    }
+
+    fn shutdown(&self) {
+        if self.closed.get() {
+            return;
+        }
+        self.closed.set(true);
+        let handlers = std::mem::take(&mut *self.handlers.borrow_mut());
+        if !handlers.is_empty() {
+            let ids: Vec<u64> = handlers.keys().copied().collect();
+            hub().lock().unwrap().retain(|e| !ids.contains(&e.id));
+        }
+        drop(handlers);
+        self.tx.close();
+        self.rx.close();
+    }
+}
+
+struct MessengerHandle(Rc<Local>);
+
+pub fn shutdown(lua: &Lua) {
+    if let Some(h) = lua.app_data_ref::<MessengerHandle>() {
+        h.0.shutdown();
     }
 }
 
@@ -129,6 +153,9 @@ fn subscribe(
 ) -> mlua::Result<Subscription> {
     if topic.is_empty() {
         return Err(LehuaError::msg("messenger: topic cannot be empty").into());
+    }
+    if local.closed.get() {
+        return Err(LehuaError::msg("messenger: this program is closing, cannot subscribe").into());
     }
     let id = NEXT_SUB_ID.fetch_add(1, Ordering::Relaxed);
     local.handlers.borrow_mut().insert(
@@ -243,6 +270,8 @@ pub fn install(lua: &Lua, sched: Rc<VmScheduler>) -> mlua::Result<()> {
         rx,
         handlers: RefCell::new(HashMap::new()),
         pump_started: Cell::new(false),
+        closed: Cell::new(false),
     });
+    lua.set_app_data(MessengerHandle(local.clone()));
     lua.globals().set("messenger", Messenger { local })
 }

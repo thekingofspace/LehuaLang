@@ -40,6 +40,10 @@ fn parse_env_value(raw: &str) -> String {
     }
 }
 
+fn exit_now(code: i32) -> mlua::Result<()> {
+    std::process::exit(code)
+}
+
 pub fn build(ctx: &LibCtx) -> mlua::Result<Value> {
     let lua = ctx.lua;
     let t = lua.create_table()?;
@@ -89,11 +93,17 @@ pub fn build(ctx: &LibCtx) -> mlua::Result<Value> {
         let sched = ctx.sched.clone();
         t.set(
             "exit",
-            lua.create_function(move |_, code: Option<i32>| -> mlua::Result<()> {
-                let code = code.unwrap_or(0);
-                sched.exit_code.set(code);
-                sched.run_close();
-                std::process::exit(code);
+            lua.create_async_function(move |lua, code: Option<i32>| {
+                let sched = sched.clone();
+                async move {
+                    let code = code.unwrap_or(0);
+                    sched.exit_code.set(code);
+                    lua.remove_interrupt();
+                    sched.run_close_async().await;
+                    crate::messenger::shutdown(&lua);
+                    crate::parallel::shutdown_all();
+                    exit_now(code)
+                }
             })?,
         )?;
     }
@@ -159,45 +169,60 @@ pub fn build(ctx: &LibCtx) -> mlua::Result<Value> {
         let scope = scope.clone();
         t.set(
             "loadEnv",
-            lua.create_function(move |lua, (path, opts): (Option<String>, Option<Table>)| {
-                let full = scope.resolve(path.as_deref().unwrap_or(".env"))?;
-                let text = std::fs::read_to_string(&full).map_err(|e| {
-                    LehuaError::msg(format!("could not read env file '{}': {e}", full.display()))
-                })?;
-                let mut apply = true;
-                let mut overwrite = false;
-                if let Some(o) = &opts {
-                    if let Some(a) = o.get::<Option<bool>>("apply")? {
-                        apply = a;
+            lua.create_async_function(move |lua, (path, opts): (Option<String>, Option<Table>)| {
+                let scope = scope.clone();
+                async move {
+                    let full = scope.resolve(path.as_deref().unwrap_or(".env"))?;
+                    let text = tokio::task::spawn_blocking(move || -> mlua::Result<String> {
+                        let text = std::fs::read_to_string(&full).map_err(|e| {
+                            LehuaError::msg(format!(
+                                "could not read env file '{}': {e}",
+                                full.display()
+                            ))
+                        })?;
+                        Ok(text)
+                    })
+                    .await
+                    .map_err(|e| {
+                        mlua::Error::external(LehuaError::msg(format!(
+                            "process.loadEnv join error: {e}"
+                        )))
+                    })??;
+                    let mut apply = true;
+                    let mut overwrite = false;
+                    if let Some(o) = &opts {
+                        if let Some(a) = o.get::<Option<bool>>("apply")? {
+                            apply = a;
+                        }
+                        if let Some(ov) = o.get::<Option<bool>>("override")? {
+                            overwrite = ov;
+                        }
                     }
-                    if let Some(ov) = o.get::<Option<bool>>("override")? {
-                        overwrite = ov;
+                    let out = lua.create_table()?;
+                    for raw in text.lines() {
+                        let line = raw.trim();
+                        if line.is_empty() || line.starts_with('#') {
+                            continue;
+                        }
+                        let line = line.strip_prefix("export ").unwrap_or(line).trim_start();
+                        let Some(eq) = line.find('=') else { continue };
+                        let key = line[..eq].trim();
+                        if key.is_empty()
+                            || !key
+                                .chars()
+                                .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '.')
+                        {
+                            continue;
+                        }
+                        let raw_value = line[eq + 1..].trim();
+                        let value = parse_env_value(raw_value);
+                        if apply && (overwrite || std::env::var_os(key).is_none()) {
+                            std::env::set_var(key, &value);
+                        }
+                        out.raw_set(key, value)?;
                     }
+                    Ok(out)
                 }
-                let out = lua.create_table()?;
-                for raw in text.lines() {
-                    let line = raw.trim();
-                    if line.is_empty() || line.starts_with('#') {
-                        continue;
-                    }
-                    let line = line.strip_prefix("export ").unwrap_or(line).trim_start();
-                    let Some(eq) = line.find('=') else { continue };
-                    let key = line[..eq].trim();
-                    if key.is_empty()
-                        || !key
-                            .chars()
-                            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '.')
-                    {
-                        continue;
-                    }
-                    let raw_value = line[eq + 1..].trim();
-                    let value = parse_env_value(raw_value);
-                    if apply && (overwrite || std::env::var_os(key).is_none()) {
-                        std::env::set_var(key, &value);
-                    }
-                    out.raw_set(key, value)?;
-                }
-                Ok(out)
             })?,
         )?;
     }

@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::rc::Rc;
 
 use mlua::{Function, Lua, MultiValue, Table, Value};
 
@@ -144,6 +145,97 @@ fn translate(registry: &Table, v: Value) -> mlua::Result<Value> {
         }
     }
     Ok(v)
+}
+
+const CLASS_HELPERS: &str = r#"
+local translateAll, translateOne = ...
+local function bind(f)
+    return function(...)
+        return f(translateAll(...))
+    end
+end
+local function metamethod(f)
+    return function(a, b, ...)
+        return f(translateOne(a), translateOne(b), ...)
+    end
+end
+local function builder(build)
+    return function(...)
+        local proxy, construct, internal = build(...)
+        if construct then
+            construct(internal, select(2, ...))
+        end
+        return proxy
+    end
+end
+return bind, metamethod, builder
+"#;
+
+struct Helpers {
+    bind_factory: Function,
+    metamethod_factory: Function,
+    builder: Function,
+    bind_cache: Table,
+    metamethod_cache: Table,
+}
+
+impl Helpers {
+    fn bind(&self, f: Function) -> mlua::Result<Function> {
+        if let Value::Function(cached) = self.bind_cache.raw_get::<Value>(f.clone())? {
+            return Ok(cached);
+        }
+        let wrapper: Function = self.bind_factory.call(f.clone())?;
+        self.bind_cache.raw_set(f, wrapper.clone())?;
+        Ok(wrapper)
+    }
+
+    fn metamethod(&self, f: Function) -> mlua::Result<Function> {
+        if let Value::Function(cached) = self.metamethod_cache.raw_get::<Value>(f.clone())? {
+            return Ok(cached);
+        }
+        let wrapper: Function = self.metamethod_factory.call(f.clone())?;
+        self.metamethod_cache.raw_set(f, wrapper.clone())?;
+        Ok(wrapper)
+    }
+}
+
+fn weak_key_table(lua: &Lua) -> mlua::Result<Table> {
+    let t = lua.create_table()?;
+    let mt = lua.create_table()?;
+    mt.raw_set("__mode", "k")?;
+    t.set_metatable(Some(mt))?;
+    Ok(t)
+}
+
+fn make_helpers(lua: &Lua, registry: &Table) -> mlua::Result<Rc<Helpers>> {
+    let reg_all = registry.clone();
+    let translate_all = lua.create_function(move |_, args: MultiValue| {
+        let mut out = Vec::with_capacity(args.len());
+        for a in args.into_iter() {
+            out.push(translate(&reg_all, a)?);
+        }
+        Ok(MultiValue::from_vec(out))
+    })?;
+    let reg_one = registry.clone();
+    let translate_one = lua.create_function(move |_, v: Value| translate(&reg_one, v))?;
+    let (bind_factory, metamethod_factory, builder): (Function, Function, Function) = lua
+        .load(CLASS_HELPERS)
+        .set_name("@lehua/class")
+        .call((translate_all, translate_one))?;
+    Ok(Rc::new(Helpers {
+        bind_factory,
+        metamethod_factory,
+        builder,
+        bind_cache: weak_key_table(lua)?,
+        metamethod_cache: weak_key_table(lua)?,
+    }))
+}
+
+fn class_label(meta: &Table) -> String {
+    match meta.raw_get::<Value>("name") {
+        Ok(Value::String(s)) => format!(" of class '{}'", s.to_string_lossy()),
+        _ => String::new(),
+    }
 }
 
 struct Entry {
@@ -440,69 +532,49 @@ fn new_class_data(lua: &Lua, spec: Table) -> mlua::Result<Table> {
     Ok(class)
 }
 
-fn build_class_data(lua: &Lua, registry: &Table, mut args: MultiValue) -> mlua::Result<Table> {
-    let class = match args.pop_front() {
-        Some(Value::Table(t)) if is_class_table(&t) => t,
-        _ => return Err(lua_err("expected a ClassData value")),
-    };
-    let meta = class_meta(&class)?;
-    let private: Table = meta.raw_get("private")?;
-    let public: Table = meta.raw_get("public")?;
-
-    let internal = lua.create_table()?;
-    let mut seen: HashMap<usize, Table> = HashMap::new();
-    for pair in private.pairs::<Value, Value>() {
-        let (k, v) = pair?;
-        internal.raw_set(k, deep_copy(lua, &v, &mut seen)?)?;
+fn translated_internal(registry: &Table, v: Value) -> mlua::Result<Table> {
+    match translate(registry, v)? {
+        Value::Table(t) => Ok(t),
+        _ => Err(lua_err("expected a class object")),
     }
-    for pair in public.pairs::<Value, Value>() {
-        let (k, v) = pair?;
-        internal.raw_set(k, deep_copy(lua, &v, &mut seen)?)?;
-    }
-    let internal_mt = lua.create_table()?;
-    let meta_for_internal = meta.clone();
-    internal_mt.raw_set(
-        "__index",
-        lua.create_function(move |_, (_t, key): (Value, Value)| {
-            resolve_static(&meta_for_internal, &key)
-        })?,
-    )?;
-    internal.set_metatable(Some(internal_mt))?;
+}
 
-    let proxy = lua.create_table()?;
-    let bound_cache = lua.create_table()?;
+fn proxy_meta(
+    lua: &Lua,
+    registry: &Table,
+    helpers: &Rc<Helpers>,
+    meta: &Table,
+) -> mlua::Result<Table> {
+    if let Value::Table(existing) = meta.raw_get::<Value>("proxyMeta")? {
+        return Ok(existing);
+    }
     let pmeta = lua.create_table()?;
     pmeta.raw_set("classMeta", meta.clone())?;
 
     let idx_meta = meta.clone();
-    let idx_internal = internal.clone();
-    let idx_cache = bound_cache.clone();
     let idx_registry = registry.clone();
+    let idx_helpers = helpers.clone();
     pmeta.raw_set(
         "__index",
-        lua.create_function(move |lua, (_t, key): (Value, Value)| {
+        lua.create_function(move |_, (this, key): (Value, Value)| {
             if static_exists(&idx_meta, &key)? {
                 return resolve_static(&idx_meta, &key);
             }
             let public: Table = idx_meta.raw_get("public")?;
             if !public.raw_get::<Value>(key.clone())?.is_nil() {
-                let val: Value = idx_internal.raw_get(key.clone())?;
+                let internal = translated_internal(&idx_registry, this)?;
+                let val: Value = internal.raw_get(key)?;
                 if let Value::Function(f) = val {
-                    let cached: Value = idx_cache.raw_get(key.clone())?;
-                    if !cached.is_nil() {
-                        return Ok(cached);
-                    }
-                    let bound = Value::Function(bind_super(lua, &idx_registry, f)?);
-                    idx_cache.raw_set(key, bound.clone())?;
-                    return Ok(bound);
+                    return Ok(Value::Function(idx_helpers.bind(f)?));
                 }
                 return Ok(val);
             }
             let private: Table = idx_meta.raw_get("private")?;
             if !private.raw_get::<Value>(key.clone())?.is_nil() {
                 return Err(lua_err(format!(
-                    "cannot read private field '{}' from outside the class",
-                    key_str(&key)
+                    "cannot read private field '{}'{} from outside the class",
+                    key_str(&key),
+                    class_label(&idx_meta)
                 )));
             }
             Ok(Value::Nil)
@@ -510,13 +582,14 @@ fn build_class_data(lua: &Lua, registry: &Table, mut args: MultiValue) -> mlua::
     )?;
 
     let ni_meta = meta.clone();
-    let ni_internal = internal.clone();
+    let ni_registry = registry.clone();
     pmeta.raw_set(
         "__newindex",
-        lua.create_function(move |_, (_t, key, value): (Value, Value, Value)| {
+        lua.create_function(move |_, (this, key, value): (Value, Value, Value)| {
             let public: Table = ni_meta.raw_get("public")?;
             if !public.raw_get::<Value>(key.clone())?.is_nil() {
-                ni_internal.raw_set(key, value)?;
+                let internal = translated_internal(&ni_registry, this)?;
+                internal.raw_set(key, value)?;
                 return Ok(());
             }
             if static_exists(&ni_meta, &key)? {
@@ -530,13 +603,15 @@ fn build_class_data(lua: &Lua, registry: &Table, mut args: MultiValue) -> mlua::
             let private: Table = ni_meta.raw_get("private")?;
             if !private.raw_get::<Value>(key.clone())?.is_nil() {
                 return Err(lua_err(format!(
-                    "cannot assign to private field '{}' from outside the class",
-                    key_str(&key)
+                    "cannot assign to private field '{}'{} from outside the class",
+                    key_str(&key),
+                    class_label(&ni_meta)
                 )));
             }
             Err(lua_err(format!(
-                "cannot assign to undeclared field '{}'",
-                key_str(&key)
+                "cannot assign to undeclared field '{}'{}",
+                key_str(&key),
+                class_label(&ni_meta)
             )))
         })?,
     )?;
@@ -551,11 +626,11 @@ fn build_class_data(lua: &Lua, registry: &Table, mut args: MultiValue) -> mlua::
         match name.as_str() {
             "__type" | "__toconsole" => {
                 if let Value::Function(f) = fn_v {
-                    let bound_internal = internal.clone();
+                    let reg = registry.clone();
                     pmeta.raw_set(
                         name_v.clone(),
-                        lua.create_function(move |_, ()| {
-                            f.call::<Value>(Value::Table(bound_internal.clone()))
+                        lua.create_function(move |_, v: Value| {
+                            f.call::<Value>(Value::Table(translated_internal(&reg, v)?))
                         })?,
                     )?;
                 } else {
@@ -565,22 +640,7 @@ fn build_class_data(lua: &Lua, registry: &Table, mut args: MultiValue) -> mlua::
             "__index" | "__newindex" => {}
             _ => {
                 if let Value::Function(f) = fn_v {
-                    let reg = registry.clone();
-                    pmeta.raw_set(
-                        name_v.clone(),
-                        lua.create_function(move |_, call: MultiValue| {
-                            let mut it = call.into_iter();
-                            let a = it.next().unwrap_or(Value::Nil);
-                            let b = it.next().unwrap_or(Value::Nil);
-                            let mut with = Vec::new();
-                            with.push(translate(&reg, a)?);
-                            with.push(translate(&reg, b)?);
-                            for extra in it {
-                                with.push(extra);
-                            }
-                            f.call::<MultiValue>(MultiValue::from_vec(with))
-                        })?,
-                    )?;
+                    pmeta.raw_set(name_v.clone(), helpers.metamethod(f)?)?;
                 } else {
                     pmeta.raw_set(name_v.clone(), fn_v)?;
                 }
@@ -588,26 +648,90 @@ fn build_class_data(lua: &Lua, registry: &Table, mut args: MultiValue) -> mlua::
         }
     }
 
+    if pmeta.raw_get::<Value>("__type")?.is_nil() {
+        if let Value::String(name) = meta.raw_get::<Value>("name")? {
+            pmeta.raw_set("__type", name)?;
+        }
+    }
+
     if pmeta.raw_get::<Value>("__toconsole")?.is_nil() {
         let console_meta = meta.clone();
-        let console_internal = internal.clone();
+        let console_registry = registry.clone();
         pmeta.raw_set(
             "__toconsole",
-            lua.create_function(move |_, ()| default_console(&console_meta, &console_internal))?,
+            lua.create_function(move |_, v: Value| {
+                default_console(&console_meta, &translated_internal(&console_registry, v)?)
+            })?,
         )?;
     }
 
+    if pmeta.raw_get::<Value>("__tostring")?.is_nil() {
+        let string_meta = meta.clone();
+        let string_registry = registry.clone();
+        pmeta.raw_set(
+            "__tostring",
+            lua.create_function(move |_, v: Value| {
+                default_console(&string_meta, &translated_internal(&string_registry, v)?)
+            })?,
+        )?;
+    }
+
+    meta.raw_set("proxyMeta", pmeta.clone())?;
+    Ok(pmeta)
+}
+
+fn internal_meta(lua: &Lua, meta: &Table) -> mlua::Result<Table> {
+    if let Value::Table(existing) = meta.raw_get::<Value>("internalMeta")? {
+        return Ok(existing);
+    }
+    let mt = lua.create_table()?;
+    let m = meta.clone();
+    mt.raw_set(
+        "__index",
+        lua.create_function(move |_, (_t, key): (Value, Value)| resolve_static(&m, &key))?,
+    )?;
+    meta.raw_set("internalMeta", mt.clone())?;
+    Ok(mt)
+}
+
+fn build_class_data(
+    lua: &Lua,
+    registry: &Table,
+    helpers: &Rc<Helpers>,
+    mut args: MultiValue,
+) -> mlua::Result<(Table, Value, Table)> {
+    let class = match args.pop_front() {
+        Some(Value::Table(t)) if is_class_table(&t) => t,
+        _ => return Err(lua_err("expected a ClassData value")),
+    };
+    let meta = class_meta(&class)?;
+    let pmeta = proxy_meta(lua, registry, helpers, &meta)?;
+    let private: Table = meta.raw_get("private")?;
+    let public: Table = meta.raw_get("public")?;
+
+    let internal = lua.create_table()?;
+    let mut seen: HashMap<usize, Table> = HashMap::new();
+    for pair in private.pairs::<Value, Value>() {
+        let (k, v) = pair?;
+        internal.raw_set(k, deep_copy(lua, &v, &mut seen)?)?;
+    }
+    for pair in public.pairs::<Value, Value>() {
+        let (k, v) = pair?;
+        internal.raw_set(k, deep_copy(lua, &v, &mut seen)?)?;
+    }
+    internal.set_metatable(Some(internal_meta(lua, &meta)?))?;
+
+    let proxy = lua.create_table()?;
     registry.raw_set(proxy.clone(), internal.clone())?;
     proxy.set_metatable(Some(pmeta))?;
 
-    if let Value::Function(construct) = meta.raw_get::<Value>("construct")? {
-        let mut call_args = Vec::with_capacity(args.len() + 1);
-        call_args.push(Value::Table(internal.clone()));
-        call_args.extend(args.into_iter());
-        construct.call::<MultiValue>(MultiValue::from_vec(call_args))?;
-    }
+    let construct: Value = meta.raw_get("construct")?;
+    let construct = match construct {
+        Value::Function(f) => Value::Function(f),
+        _ => Value::Nil,
+    };
 
-    Ok(proxy)
+    Ok((proxy, construct, internal))
 }
 
 fn super_member(meta: &Table, key: &Value) -> mlua::Result<Option<Value>> {
@@ -632,28 +756,61 @@ fn super_member(meta: &Table, key: &Value) -> mlua::Result<Option<Value>> {
     Ok(None)
 }
 
-fn bind_super(lua: &Lua, registry: &Table, f: Function) -> mlua::Result<Function> {
-    let reg = registry.clone();
-    lua.create_function(move |_, call: MultiValue| {
-        let mut args = Vec::with_capacity(call.len());
-        for a in call.into_iter() {
-            args.push(translate(&reg, a)?);
-        }
-        f.call::<MultiValue>(MultiValue::from_vec(args))
-    })
-}
-
-fn super_get(lua: &Lua, registry: &Table, class: Value, key: Value) -> mlua::Result<Value> {
+fn super_get(helpers: &Rc<Helpers>, class: Value, key: Value) -> mlua::Result<Value> {
     let class = match class {
         Value::Table(t) if is_class_table(&t) => t,
         _ => return Err(lua_err("expected a ClassData value")),
     };
     let meta = class_meta(&class)?;
     match super_member(&meta, &key)? {
-        Some(Value::Function(f)) => Ok(Value::Function(bind_super(lua, registry, f)?)),
+        Some(Value::Function(f)) => Ok(Value::Function(helpers.bind(f)?)),
         Some(v) => Ok(v),
         None => Err(lua_err(format!("SuperGet: class has no field '{}'", key_str(&key)))),
     }
+}
+
+fn class_of(registry: &Table, v: &Value) -> mlua::Result<Option<Table>> {
+    if let Value::Table(t) = v {
+        if is_class_table(t) {
+            return Ok(Some(t.clone()));
+        }
+        if let Value::Table(_) = registry.raw_get::<Value>(t.clone())? {
+            if let Some(pmeta) = t.metatable() {
+                if let Ok(cm) = pmeta.raw_get::<Table>("classMeta") {
+                    return Ok(Some(cm.raw_get("classRef")?));
+                }
+            }
+        }
+    }
+    Ok(None)
+}
+
+fn is_a(registry: &Table, obj: Value, class: Value) -> mlua::Result<bool> {
+    let target = match &class {
+        Value::Table(t) if is_class_table(t) => t.to_pointer() as usize,
+        _ => return Err(lua_err("IsA expects a ClassData as its second argument")),
+    };
+    let Some(start) = class_of(registry, &obj)? else {
+        return Ok(false);
+    };
+    let mut stack = vec![start];
+    let mut seen: Vec<usize> = Vec::new();
+    while let Some(c) = stack.pop() {
+        let ptr = c.to_pointer() as usize;
+        if ptr == target {
+            return Ok(true);
+        }
+        if seen.contains(&ptr) {
+            continue;
+        }
+        seen.push(ptr);
+        let meta = class_meta(&c)?;
+        let parents: Table = meta.raw_get("parents")?;
+        for p in parents.sequence_values::<Table>() {
+            stack.push(p?);
+        }
+    }
+    Ok(false)
 }
 
 fn interface(lua: &Lua, spec: Table) -> mlua::Result<Table> {
@@ -722,6 +879,7 @@ pub fn install(lua: &Lua) -> mlua::Result<()> {
     registry_mt.raw_set("__mode", "k")?;
     registry.set_metatable(Some(registry_mt))?;
 
+    let helpers = make_helpers(lua, &registry)?;
     let globals = lua.globals();
 
     globals.set(
@@ -733,18 +891,37 @@ pub fn install(lua: &Lua) -> mlua::Result<()> {
     )?;
 
     let build_registry = registry.clone();
+    let build_helpers = helpers.clone();
+    let build_fn = lua.create_function(move |lua, args: MultiValue| {
+        build_class_data(lua, &build_registry, &build_helpers, args)
+    })?;
+    let build_global: Function = helpers.builder.call(build_fn)?;
+    globals.set("BuildClassData", build_global)?;
+
+    let super_helpers = helpers.clone();
     globals.set(
-        "BuildClassData",
-        lua.create_function(move |lua, args: MultiValue| {
-            build_class_data(lua, &build_registry, args)
+        "SuperGet",
+        lua.create_function(move |_, (class, key): (Value, Value)| {
+            super_get(&super_helpers, class, key)
         })?,
     )?;
 
-    let super_registry = registry.clone();
+    let isa_registry = registry.clone();
     globals.set(
-        "SuperGet",
-        lua.create_function(move |lua, (class, key): (Value, Value)| {
-            super_get(lua, &super_registry, class, key)
+        "IsA",
+        lua.create_function(move |_, (obj, class): (Value, Value)| {
+            is_a(&isa_registry, obj, class)
+        })?,
+    )?;
+
+    let fetch_registry = registry.clone();
+    globals.set(
+        "FetchClass",
+        lua.create_function(move |_, v: Value| {
+            Ok(match class_of(&fetch_registry, &v)? {
+                Some(c) => Value::Table(c),
+                None => Value::Nil,
+            })
         })?,
     )?;
 
@@ -1070,6 +1247,214 @@ mod tests {
             })
             local c = BuildClassData(Circle, 3)
             return (not bad) and Implements(c, IShape) and (not Implements(c, Interface({ "Nope" })))
+            "#
+        ));
+    }
+
+    #[test]
+    fn methods_can_yield_to_their_coroutine() {
+        assert_eq!(
+            eval_string(
+                r#"
+                local C = NewClassData({
+                    Private = { n = 0 },
+                    Public = {
+                        Gen = function(self, first)
+                            local got = coroutine.yield(first + self.n)
+                            return got .. ":" .. self.n
+                        end,
+                    },
+                    __construct = function(self, n) self.n = n end,
+                })
+                local a = BuildClassData(C, 7)
+                local co = coroutine.create(function(x) return a:Gen(x) end)
+                local ok1, v1 = coroutine.resume(co, 3)
+                local ok2, v2 = coroutine.resume(co, "back")
+                assert(ok1 and ok2, tostring(v1) .. "/" .. tostring(v2))
+                return v1 .. "," .. v2
+                "#
+            ),
+            "10,back:7"
+        );
+    }
+
+    #[test]
+    fn constructors_can_yield_to_their_coroutine() {
+        assert_eq!(
+            eval_string(
+                r#"
+                local C = NewClassData({
+                    Private = { v = "" },
+                    Public = { Get = function(self) return self.v end },
+                    __construct = function(self, base)
+                        self.v = base .. coroutine.yield("need-more")
+                    end,
+                })
+                local co = coroutine.create(function()
+                    local obj = BuildClassData(C, "a")
+                    return obj:Get()
+                end)
+                local ok1, ask = coroutine.resume(co)
+                local ok2, out = coroutine.resume(co, "b")
+                assert(ok1 and ok2, tostring(ask) .. "/" .. tostring(out))
+                return ask .. "," .. out
+                "#
+            ),
+            "need-more,ab"
+        );
+    }
+
+    #[test]
+    fn superget_bound_functions_can_yield() {
+        assert_eq!(
+            eval_i64(
+                r#"
+                local Base = NewClassData({
+                    Private = { n = 5 },
+                    Public = {
+                        Slow = function(self)
+                            coroutine.yield()
+                            return self.n
+                        end,
+                    },
+                })
+                local Child = NewClassData({
+                    Inherits = { { Class = Base, Private = { "n" } } },
+                    Public = {
+                        Go = function(self) return SuperGet(Base, "Slow")(self) end,
+                    },
+                })
+                local c = BuildClassData(Child)
+                local co = coroutine.create(function() return c:Go() end)
+                coroutine.resume(co)
+                local ok, v = coroutine.resume(co)
+                assert(ok, tostring(v))
+                return v
+                "#
+            ),
+            5
+        );
+    }
+
+    #[test]
+    fn is_a_walks_the_parent_graph() {
+        assert!(eval_bool(
+            r#"
+            local A = NewClassData({ Name = "A", Public = {} })
+            local B = NewClassData({ Name = "B", Inherits = A, Public = {} })
+            local C = NewClassData({ Name = "C", Inherits = { { Class = B } }, Public = {} })
+            local Other = NewClassData({ Name = "Other", Public = {} })
+            local c = BuildClassData(C)
+            return IsA(c, C) and IsA(c, B) and IsA(c, A)
+                and IsA(C, A) and IsA(B, B)
+                and not IsA(c, Other) and not IsA(A, B)
+                and not IsA({}, A) and not IsA(5, A) and not IsA(nil, A)
+            "#
+        ));
+    }
+
+    #[test]
+    fn is_a_rejects_non_class_target() {
+        assert!(!eval_bool(
+            r#"
+            local A = NewClassData({ Public = {} })
+            local a = BuildClassData(A)
+            return (pcall(function() return IsA(a, {}) end))
+            "#
+        ));
+    }
+
+    #[test]
+    fn named_classes_default_their_instance_type() {
+        assert_eq!(
+            eval_string(
+                r#"
+                local Widget = NewClassData({ Name = "Widget", Public = {} })
+                local Anon = NewClassData({ Public = {} })
+                local Custom = NewClassData({ Name = "Ignored", __type = "Custom", Public = {} })
+                return GetType(BuildClassData(Widget)) .. ","
+                    .. GetType(BuildClassData(Anon)) .. ","
+                    .. GetType(BuildClassData(Custom))
+                "#
+            ),
+            "Widget,table,Custom"
+        );
+    }
+
+    #[test]
+    fn tostring_defaults_to_console_repr() {
+        assert_eq!(
+            eval_string(
+                r#"
+                local P = NewClassData({
+                    Name = "Point",
+                    Public = { x = 0, y = 0 },
+                    __construct = function(self, x, y) self.x = x self.y = y end,
+                })
+                return tostring(BuildClassData(P, 1, 2))
+                "#
+            ),
+            "Point { x = 1, y = 2 }"
+        );
+    }
+
+    #[test]
+    fn private_errors_name_the_class() {
+        assert!(eval_bool(
+            r#"
+            local C = NewClassData({ Name = "Vault", Private = { secret = 1 }, Public = {} })
+            local a = BuildClassData(C)
+            local ok, err = pcall(function() return a.secret end)
+            return not ok and string.find(tostring(err), "Vault", 1, true) ~= nil
+            "#
+        ));
+    }
+
+    #[test]
+    fn fetch_class_returns_the_classdata() {
+        assert!(eval_bool(
+            r#"
+            local C = NewClassData({ Name = "C", Public = {} })
+            local D = NewClassData({ Name = "D", Inherits = C, Public = {} })
+            local d = BuildClassData(D)
+            return FetchClass(d) == D and FetchClass(D) == D
+                and FetchClass({}) == nil and FetchClass(5) == nil and FetchClass(nil) == nil
+                and IsA(FetchClass(d), C)
+            "#
+        ));
+    }
+
+    #[test]
+    fn instances_share_bound_methods_and_metatables() {
+        assert!(eval_bool(
+            r#"
+            local C = NewClassData({
+                Private = { n = 0 },
+                Public = { Inc = function(self) self.n += 1 return self.n end },
+            })
+            local a = BuildClassData(C)
+            local b = BuildClassData(C)
+            return rawequal(a.Inc, b.Inc)
+                and rawequal(getmetatable(a), getmetatable(b))
+                and a:Inc() == 1 and a:Inc() == 2 and b:Inc() == 1
+            "#
+        ));
+    }
+
+    #[test]
+    fn eq_metamethod_fires_between_instances() {
+        assert!(eval_bool(
+            r#"
+            local V = NewClassData({
+                Private = { x = 0 },
+                Public = {},
+                __eq = function(self, other) return self.x == other.x end,
+                __construct = function(self, x) self.x = x end,
+            })
+            local a = BuildClassData(V, 3)
+            local b = BuildClassData(V, 3)
+            local c = BuildClassData(V, 4)
+            return a == b and not (a == c)
             "#
         ));
     }

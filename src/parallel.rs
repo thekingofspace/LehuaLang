@@ -1,11 +1,57 @@
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, OnceLock};
+use std::time::{Duration, Instant};
 
 use async_channel::{Receiver, Sender};
-use mlua::{Function, Lua, MultiValue, UserData, UserDataMethods, Value};
+use mlua::{Function, Lua, MultiValue, UserData, UserDataMethods, Value, VmState};
 
 use crate::engine::{self, Engine};
 use crate::error::LehuaError;
 use crate::portable::PortableValue;
+
+struct WorkerSignal {
+    stop: AtomicBool,
+    wake: tokio::sync::Notify,
+}
+
+struct WorkerEntry {
+    serial: u64,
+    signal: Arc<WorkerSignal>,
+    join: std::thread::JoinHandle<()>,
+}
+
+fn workers() -> &'static Mutex<Vec<WorkerEntry>> {
+    static WORKERS: OnceLock<Mutex<Vec<WorkerEntry>>> = OnceLock::new();
+    WORKERS.get_or_init(|| Mutex::new(Vec::new()))
+}
+
+static NEXT_WORKER: AtomicU64 = AtomicU64::new(1);
+
+const SHUTDOWN_GRACE: Duration = Duration::from_secs(5);
+
+pub fn shutdown_all() {
+    let entries: Vec<WorkerEntry> = std::mem::take(&mut *workers().lock().unwrap());
+    if entries.is_empty() {
+        return;
+    }
+    for e in &entries {
+        e.signal.stop.store(true, Ordering::SeqCst);
+        e.signal.wake.notify_one();
+    }
+    let me = std::thread::current().id();
+    let deadline = Instant::now() + SHUTDOWN_GRACE;
+    for e in entries {
+        if e.join.thread().id() == me {
+            continue;
+        }
+        while !e.join.is_finished() && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        if e.join.is_finished() {
+            let _ = e.join.join();
+        }
+    }
+}
 
 pub struct Port {
     tx: Sender<PortableValue>,
@@ -88,6 +134,12 @@ pub fn make_parallel(lua: &Lua, engine: Arc<Engine>, from_id: &str) -> mlua::Res
 
 fn spawn_worker(engine: Arc<Engine>, worker_id: String, worker_port: Port, args: Vec<PortableValue>) {
     let label = worker_id.clone();
+    let serial = NEXT_WORKER.fetch_add(1, Ordering::Relaxed);
+    let signal = Arc::new(WorkerSignal {
+        stop: AtomicBool::new(false),
+        wake: tokio::sync::Notify::new(),
+    });
+    let thread_signal = signal.clone();
     let builder = std::thread::Builder::new().name(format!("lehua-worker:{worker_id}"));
     let spawned = builder.spawn(move || {
         let rt = match tokio::runtime::Builder::new_current_thread()
@@ -97,6 +149,7 @@ fn spawn_worker(engine: Arc<Engine>, worker_id: String, worker_port: Port, args:
             Ok(rt) => rt,
             Err(e) => {
                 eprintln!("lehua: worker '{worker_id}' failed to start runtime: {e}");
+                workers().lock().unwrap().retain(|e| e.serial != serial);
                 return;
             }
         };
@@ -110,6 +163,14 @@ fn spawn_worker(engine: Arc<Engine>, worker_id: String, worker_port: Port, args:
                     return;
                 }
             };
+            let interrupt_signal = thread_signal.clone();
+            lua.set_interrupt(move |_| {
+                if interrupt_signal.stop.load(Ordering::Relaxed) {
+                    Err(LehuaError::msg("worker stopped: the program is closing").into())
+                } else {
+                    Ok(VmState::Continue)
+                }
+            });
             let chan = match lua.create_userdata(worker_port) {
                 Ok(ud) => Value::UserData(ud),
                 Err(e) => {
@@ -117,13 +178,28 @@ fn spawn_worker(engine: Arc<Engine>, worker_id: String, worker_port: Port, args:
                     return;
                 }
             };
-            if let Err(e) = engine::run_entry(lua, ctx, &worker_id, Some(chan), args).await {
-                eprintln!("lehua: worker '{worker_id}' error: {}", crate::error::pretty(&e));
+            tokio::select! {
+                res = engine::run_entry(lua.clone(), ctx.clone(), &worker_id, Some(chan), args) => {
+                    if let Err(e) = res {
+                        if !thread_signal.stop.load(Ordering::Relaxed) {
+                            eprintln!("lehua: worker '{worker_id}' error: {}", crate::error::pretty(&e));
+                        }
+                    }
+                }
+                _ = thread_signal.wake.notified() => {
+                    lua.remove_interrupt();
+                    ctx.sched.run_close_async().await;
+                    crate::messenger::shutdown(&lua);
+                }
             }
         }));
+        drop(local);
+        rt.shutdown_background();
+        workers().lock().unwrap().retain(|e| e.serial != serial);
     });
 
-    if let Err(e) = spawned {
-        eprintln!("lehua: failed to spawn worker thread for '{label}': {e}");
+    match spawned {
+        Ok(join) => workers().lock().unwrap().push(WorkerEntry { serial, signal, join }),
+        Err(e) => eprintln!("lehua: failed to spawn worker thread for '{label}': {e}"),
     }
 }

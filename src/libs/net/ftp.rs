@@ -30,11 +30,11 @@ where
     .map_err(|e| mlua::Error::external(LehuaError::msg(format!("ftp task failed: {e}"))))?
 }
 
-fn source_bytes(v: &Value) -> mlua::Result<Vec<u8>> {
+async fn source_bytes(v: &Value) -> mlua::Result<Vec<u8>> {
     match v {
         Value::String(s) => Ok(s.as_bytes().to_vec()),
         Value::Buffer(b) => Ok(b.to_vec()),
-        Value::UserData(_) => match take_sink_bytes(v) {
+        Value::UserData(_) => match take_sink_bytes(v).await {
             Some(bytes) => bytes,
             None => Err(bad_source()),
         },
@@ -141,7 +141,7 @@ impl UserData for FtpSession {
                 })
                 .await?;
                 match into {
-                    Some(v) => match append_to_sink(&v, &bytes) {
+                    Some(v) => match append_to_sink(&v, &bytes).await {
                         Some(res) => {
                             res?;
                             Ok(Value::Integer(bytes.len() as i64))
@@ -166,19 +166,24 @@ impl UserData for FtpSession {
                     Ok(s.retr_as_buffer(&remote)?.into_inner())
                 })
                 .await?;
-                if let Some(parent) = target.parent() {
-                    std::fs::create_dir_all(parent).map_err(mlua::Error::external)?;
-                }
-                std::fs::write(&target, &bytes).map_err(mlua::Error::external)?;
-                Ok(target.to_string_lossy().into_owned())
+                tokio::task::spawn_blocking(move || {
+                    if let Some(parent) = target.parent() {
+                        std::fs::create_dir_all(parent).map_err(mlua::Error::external)?;
+                    }
+                    std::fs::write(&target, &bytes).map_err(mlua::Error::external)?;
+                    Ok(target.to_string_lossy().into_owned())
+                })
+                .await
+                .map_err(|e| {
+                    mlua::Error::external(LehuaError::msg(format!("ftp task failed: {e}")))
+                })?
             }
         });
 
         m.add_async_method("upload", |_, this, (remote, source): (String, Value)| {
             let ftp = this.ftp.clone();
-            let data = source_bytes(&source);
             async move {
-                let data = data?;
+                let data = source_bytes(&source).await?;
                 let n = with_ftp(ftp, move |s| {
                     s.transfer_type(FileType::Binary)?;
                     let mut cursor = Cursor::new(data);
@@ -194,7 +199,13 @@ impl UserData for FtpSession {
             let source = this.scope.resolve(&local);
             async move {
                 let source = source?;
-                let data = std::fs::read(&source).map_err(mlua::Error::external)?;
+                let data = tokio::task::spawn_blocking(move || {
+                    std::fs::read(&source).map_err(mlua::Error::external)
+                })
+                .await
+                .map_err(|e| {
+                    mlua::Error::external(LehuaError::msg(format!("ftp task failed: {e}")))
+                })??;
                 let n = with_ftp(ftp, move |s| {
                     s.transfer_type(FileType::Binary)?;
                     let mut cursor = Cursor::new(data);

@@ -1,9 +1,9 @@
-use std::cell::RefCell;
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 
-use mlua::{AnyUserData, Lua, UserData, UserDataMethods, Value, Variadic};
+use mlua::{AnyUserData, UserData, UserDataMethods, Value, Variadic};
 
 use super::{normalize, LibCtx, PathScope};
 use crate::error::LehuaError;
@@ -128,10 +128,16 @@ pub fn build(ctx: &LibCtx) -> mlua::Result<Value> {
         let scope = scope.clone();
         t.set(
             "read",
-            lua.create_function(move |lua, p: String| {
-                let full = scope.resolve(&p)?;
-                let bytes = std::fs::read(&full).map_err(mlua::Error::external)?;
-                lua.create_string(bytes)
+            lua.create_async_function(move |lua, p: String| {
+                let scope = scope.clone();
+                async move {
+                    let full = scope.resolve(&p)?;
+                    let bytes = run_blocking(move || {
+                        std::fs::read(&full).map_err(mlua::Error::external)
+                    })
+                    .await?;
+                    lua.create_string(bytes)
+                }
             })?,
         )?;
     }
@@ -139,10 +145,17 @@ pub fn build(ctx: &LibCtx) -> mlua::Result<Value> {
         let scope = scope.clone();
         t.set(
             "write",
-            lua.create_function(move |_, (p, data): (String, mlua::LuaString)| {
-                let full = scope.resolve(&p)?;
-                std::fs::write(&full, &data.as_bytes()[..]).map_err(mlua::Error::external)?;
-                Ok(())
+            lua.create_async_function(move |_, (p, data): (String, mlua::LuaString)| {
+                let scope = scope.clone();
+                async move {
+                    let full = scope.resolve(&p)?;
+                    let bytes = data.as_bytes().to_vec();
+                    run_blocking(move || {
+                        std::fs::write(&full, &bytes).map_err(mlua::Error::external)?;
+                        Ok(())
+                    })
+                    .await
+                }
             })?,
         )?;
     }
@@ -151,10 +164,16 @@ pub fn build(ctx: &LibCtx) -> mlua::Result<Value> {
         let scope = scope.clone();
         t.set(
             "readImage",
-            lua.create_function(move |_, p: String| {
-                let full = scope.resolve(&p)?;
-                let bytes = std::fs::read(&full).map_err(mlua::Error::external)?;
-                super::canvas::decode_bytes(&bytes)
+            lua.create_async_function(move |_, p: String| {
+                let scope = scope.clone();
+                async move {
+                    let full = scope.resolve(&p)?;
+                    run_blocking(move || {
+                        let bytes = std::fs::read(&full).map_err(mlua::Error::external)?;
+                        super::canvas::decode_bytes(&bytes)
+                    })
+                    .await
+                }
             })?,
         )?;
     }
@@ -163,26 +182,34 @@ pub fn build(ctx: &LibCtx) -> mlua::Result<Value> {
         let scope = scope.clone();
         t.set(
             "writeImage",
-            lua.create_function(
+            lua.create_async_function(
                 move |_, (p, image, format, quality): (String, mlua::AnyUserData, Option<String>, Option<u8>)| {
-                    let canvas = image.borrow::<super::canvas::Canvas>().map_err(|_| {
-                        crate::error::LehuaError::msg("writeImage expects a canvas as its second argument")
-                    })?;
-                    let full = scope.resolve(&p)?;
-                    let name = match format {
-                        Some(f) => f,
-                        None => full
-                            .extension()
-                            .map(|e| e.to_string_lossy().into_owned())
-                            .unwrap_or_else(|| "png".to_string()),
-                    };
-                    let fmt = super::canvas::format_from_name(&name)?;
-                    let bytes = super::canvas::encode_image(&canvas.img.borrow(), fmt, quality)?;
-                    if let Some(parent) = full.parent() {
-                        std::fs::create_dir_all(parent).map_err(mlua::Error::external)?;
+                    let scope = scope.clone();
+                    async move {
+                        let canvas = image.borrow::<super::canvas::Canvas>().map_err(|_| {
+                            crate::error::LehuaError::msg("writeImage expects a canvas as its second argument")
+                        })?;
+                        let full = scope.resolve(&p)?;
+                        let name = match format {
+                            Some(f) => f,
+                            None => full
+                                .extension()
+                                .map(|e| e.to_string_lossy().into_owned())
+                                .unwrap_or_else(|| "png".to_string()),
+                        };
+                        let fmt = super::canvas::format_from_name(&name)?;
+                        let img = canvas.img.borrow().clone();
+                        drop(canvas);
+                        run_blocking(move || {
+                            let bytes = super::canvas::encode_image(&img, fmt, quality)?;
+                            if let Some(parent) = full.parent() {
+                                std::fs::create_dir_all(parent).map_err(mlua::Error::external)?;
+                            }
+                            std::fs::write(&full, bytes).map_err(mlua::Error::external)?;
+                            Ok(full.to_string_lossy().into_owned())
+                        })
+                        .await
                     }
-                    std::fs::write(&full, bytes).map_err(mlua::Error::external)?;
-                    Ok(full.to_string_lossy().into_owned())
                 },
             )?,
         )?;
@@ -191,10 +218,16 @@ pub fn build(ctx: &LibCtx) -> mlua::Result<Value> {
         let scope = scope.clone();
         t.set(
             "readBuffer",
-            lua.create_function(move |lua, p: String| {
-                let full = scope.resolve(&p)?;
-                let bytes = std::fs::read(&full).map_err(mlua::Error::external)?;
-                lua.create_buffer(bytes)
+            lua.create_async_function(move |lua, p: String| {
+                let scope = scope.clone();
+                async move {
+                    let full = scope.resolve(&p)?;
+                    let bytes = run_blocking(move || {
+                        std::fs::read(&full).map_err(mlua::Error::external)
+                    })
+                    .await?;
+                    lua.create_buffer(bytes)
+                }
             })?,
         )?;
     }
@@ -202,10 +235,17 @@ pub fn build(ctx: &LibCtx) -> mlua::Result<Value> {
         let scope = scope.clone();
         t.set(
             "writeBuffer",
-            lua.create_function(move |_, (p, buf): (String, mlua::Buffer)| {
-                let full = scope.resolve(&p)?;
-                std::fs::write(&full, buf.to_vec()).map_err(mlua::Error::external)?;
-                Ok(())
+            lua.create_async_function(move |_, (p, buf): (String, mlua::Buffer)| {
+                let scope = scope.clone();
+                async move {
+                    let full = scope.resolve(&p)?;
+                    let bytes = buf.to_vec();
+                    run_blocking(move || {
+                        std::fs::write(&full, bytes).map_err(mlua::Error::external)?;
+                        Ok(())
+                    })
+                    .await
+                }
             })?,
         )?;
     }
@@ -213,29 +253,36 @@ pub fn build(ctx: &LibCtx) -> mlua::Result<Value> {
         let scope = scope.clone();
         t.set(
             "readBufferAt",
-            lua.create_function(move |lua, (p, start, end): (String, i64, i64)| {
-                if start < 0 || end < 0 {
-                    return Err(LehuaError::msg(
-                        "fs.readBufferAt: start and end must not be negative",
-                    )
-                    .into());
+            lua.create_async_function(move |lua, (p, start, end): (String, i64, i64)| {
+                let scope = scope.clone();
+                async move {
+                    if start < 0 || end < 0 {
+                        return Err(LehuaError::msg(
+                            "fs.readBufferAt: start and end must not be negative",
+                        )
+                        .into());
+                    }
+                    if end < start {
+                        return Err(LehuaError::msg(
+                            "fs.readBufferAt: end must not be before start",
+                        )
+                        .into());
+                    }
+                    let full = scope.resolve(&p)?;
+                    let bytes = run_blocking(move || {
+                        let mut f = File::open(&full).map_err(mlua::Error::external)?;
+                        f.seek(SeekFrom::Start(start as u64))
+                            .map_err(mlua::Error::external)?;
+                        let mut bytes = Vec::new();
+                        Read::by_ref(&mut f)
+                            .take((end - start) as u64)
+                            .read_to_end(&mut bytes)
+                            .map_err(mlua::Error::external)?;
+                        Ok(bytes)
+                    })
+                    .await?;
+                    lua.create_buffer(bytes)
                 }
-                if end < start {
-                    return Err(LehuaError::msg(
-                        "fs.readBufferAt: end must not be before start",
-                    )
-                    .into());
-                }
-                let full = scope.resolve(&p)?;
-                let mut f = File::open(&full).map_err(mlua::Error::external)?;
-                f.seek(SeekFrom::Start(start as u64))
-                    .map_err(mlua::Error::external)?;
-                let mut bytes = Vec::new();
-                Read::by_ref(&mut f)
-                    .take((end - start) as u64)
-                    .read_to_end(&mut bytes)
-                    .map_err(mlua::Error::external)?;
-                lua.create_buffer(bytes)
             })?,
         )?;
     }
@@ -243,23 +290,30 @@ pub fn build(ctx: &LibCtx) -> mlua::Result<Value> {
         let scope = scope.clone();
         t.set(
             "writeBufferAt",
-            lua.create_function(move |_, (p, start, buf): (String, i64, mlua::Buffer)| {
-                if start < 0 {
-                    return Err(LehuaError::msg(
-                        "fs.writeBufferAt: start must not be negative",
-                    )
-                    .into());
+            lua.create_async_function(move |_, (p, start, buf): (String, i64, mlua::Buffer)| {
+                let scope = scope.clone();
+                async move {
+                    if start < 0 {
+                        return Err(LehuaError::msg(
+                            "fs.writeBufferAt: start must not be negative",
+                        )
+                        .into());
+                    }
+                    let full = scope.resolve(&p)?;
+                    let bytes = buf.to_vec();
+                    run_blocking(move || {
+                        let mut f = OpenOptions::new()
+                            .write(true)
+                            .create(true)
+                            .open(&full)
+                            .map_err(mlua::Error::external)?;
+                        f.seek(SeekFrom::Start(start as u64))
+                            .map_err(mlua::Error::external)?;
+                        f.write_all(&bytes).map_err(mlua::Error::external)?;
+                        Ok(())
+                    })
+                    .await
                 }
-                let full = scope.resolve(&p)?;
-                let mut f = OpenOptions::new()
-                    .write(true)
-                    .create(true)
-                    .open(&full)
-                    .map_err(mlua::Error::external)?;
-                f.seek(SeekFrom::Start(start as u64))
-                    .map_err(mlua::Error::external)?;
-                f.write_all(&buf.to_vec()).map_err(mlua::Error::external)?;
-                Ok(())
             })?,
         )?;
     }
@@ -267,15 +321,22 @@ pub fn build(ctx: &LibCtx) -> mlua::Result<Value> {
         let scope = scope.clone();
         t.set(
             "append",
-            lua.create_function(move |_, (p, data): (String, mlua::LuaString)| {
-                let full = scope.resolve(&p)?;
-                let mut f = OpenOptions::new()
-                    .create(true)
-                    .append(true)
-                    .open(&full)
-                    .map_err(mlua::Error::external)?;
-                f.write_all(&data.as_bytes()[..]).map_err(mlua::Error::external)?;
-                Ok(())
+            lua.create_async_function(move |_, (p, data): (String, mlua::LuaString)| {
+                let scope = scope.clone();
+                async move {
+                    let full = scope.resolve(&p)?;
+                    let bytes = data.as_bytes().to_vec();
+                    run_blocking(move || {
+                        let mut f = OpenOptions::new()
+                            .create(true)
+                            .append(true)
+                            .open(&full)
+                            .map_err(mlua::Error::external)?;
+                        f.write_all(&bytes).map_err(mlua::Error::external)?;
+                        Ok(())
+                    })
+                    .await
+                }
             })?,
         )?;
     }
@@ -309,15 +370,21 @@ pub fn build(ctx: &LibCtx) -> mlua::Result<Value> {
         let scope = scope.clone();
         t.set(
             "removeAll",
-            lua.create_function(move |_, p: String| {
-                let full = scope.resolve(&p)?;
-                let r = if full.is_dir() {
-                    std::fs::remove_dir_all(&full)
-                } else {
-                    std::fs::remove_file(&full)
-                };
-                r.map_err(mlua::Error::external)?;
-                Ok(())
+            lua.create_async_function(move |_, p: String| {
+                let scope = scope.clone();
+                async move {
+                    let full = scope.resolve(&p)?;
+                    run_blocking(move || {
+                        let r = if full.is_dir() {
+                            std::fs::remove_dir_all(&full)
+                        } else {
+                            std::fs::remove_file(&full)
+                        };
+                        r.map_err(mlua::Error::external)?;
+                        Ok(())
+                    })
+                    .await
+                }
             })?,
         )?;
     }
@@ -325,23 +392,29 @@ pub fn build(ctx: &LibCtx) -> mlua::Result<Value> {
         let scope = scope.clone();
         t.set(
             "copy",
-            lua.create_function(move |_, (src, dst): (String, String)| {
-                let src = scope.resolve(&src)?;
-                let dst = scope.resolve(&dst)?;
-                if src.is_dir() {
-                    return Err(LehuaError::msg(
-                        "fs.copy copies files; use fs.copyAll for folders",
-                    )
-                    .into());
+            lua.create_async_function(move |_, (src, dst): (String, String)| {
+                let scope = scope.clone();
+                async move {
+                    let src = scope.resolve(&src)?;
+                    let dst = scope.resolve(&dst)?;
+                    run_blocking(move || {
+                        if src.is_dir() {
+                            return Err(LehuaError::msg(
+                                "fs.copy copies files; use fs.copyAll for folders",
+                            )
+                            .into());
+                        }
+                        if src == dst {
+                            return Err(LehuaError::msg(
+                                "fs.copy: source and destination are the same file",
+                            )
+                            .into());
+                        }
+                        std::fs::copy(&src, &dst).map_err(mlua::Error::external)?;
+                        Ok(())
+                    })
+                    .await
                 }
-                if src == dst {
-                    return Err(LehuaError::msg(
-                        "fs.copy: source and destination are the same file",
-                    )
-                    .into());
-                }
-                std::fs::copy(&src, &dst).map_err(mlua::Error::external)?;
-                Ok(())
             })?,
         )?;
     }
@@ -349,17 +422,23 @@ pub fn build(ctx: &LibCtx) -> mlua::Result<Value> {
         let scope = scope.clone();
         t.set(
             "copyAll",
-            lua.create_function(move |_, (src, dst): (String, String)| {
-                let src = scope.resolve(&src)?;
-                let dst = scope.resolve(&dst)?;
-                if src.is_dir() && dst.starts_with(&src) {
-                    return Err(LehuaError::msg(
-                        "fs.copyAll: destination is inside the source folder",
-                    )
-                    .into());
+            lua.create_async_function(move |_, (src, dst): (String, String)| {
+                let scope = scope.clone();
+                async move {
+                    let src = scope.resolve(&src)?;
+                    let dst = scope.resolve(&dst)?;
+                    run_blocking(move || {
+                        if src.is_dir() && dst.starts_with(&src) {
+                            return Err(LehuaError::msg(
+                                "fs.copyAll: destination is inside the source folder",
+                            )
+                            .into());
+                        }
+                        copy_recursive(&src, &dst).map_err(mlua::Error::external)?;
+                        Ok(())
+                    })
+                    .await
                 }
-                copy_recursive(&src, &dst).map_err(mlua::Error::external)?;
-                Ok(())
             })?,
         )?;
     }
@@ -367,26 +446,32 @@ pub fn build(ctx: &LibCtx) -> mlua::Result<Value> {
         let scope = scope.clone();
         t.set(
             "move",
-            lua.create_function(move |_, (src, dst): (String, String)| {
-                let src = scope.resolve(&src)?;
-                let dst = scope.resolve(&dst)?;
-                if src.is_dir() && dst.starts_with(&src) {
-                    return Err(LehuaError::msg(
-                        "fs.move: destination is inside the source folder",
-                    )
-                    .into());
+            lua.create_async_function(move |_, (src, dst): (String, String)| {
+                let scope = scope.clone();
+                async move {
+                    let src = scope.resolve(&src)?;
+                    let dst = scope.resolve(&dst)?;
+                    run_blocking(move || {
+                        if src.is_dir() && dst.starts_with(&src) {
+                            return Err(LehuaError::msg(
+                                "fs.move: destination is inside the source folder",
+                            )
+                            .into());
+                        }
+                        if std::fs::rename(&src, &dst).is_ok() {
+                            return Ok(());
+                        }
+                        copy_recursive(&src, &dst).map_err(mlua::Error::external)?;
+                        let r = if src.is_dir() {
+                            std::fs::remove_dir_all(&src)
+                        } else {
+                            std::fs::remove_file(&src)
+                        };
+                        r.map_err(mlua::Error::external)?;
+                        Ok(())
+                    })
+                    .await
                 }
-                if std::fs::rename(&src, &dst).is_ok() {
-                    return Ok(());
-                }
-                copy_recursive(&src, &dst).map_err(mlua::Error::external)?;
-                let r = if src.is_dir() {
-                    std::fs::remove_dir_all(&src)
-                } else {
-                    std::fs::remove_file(&src)
-                };
-                r.map_err(mlua::Error::external)?;
-                Ok(())
             })?,
         )?;
     }
@@ -394,20 +479,29 @@ pub fn build(ctx: &LibCtx) -> mlua::Result<Value> {
         let scope = scope.clone();
         t.set(
             "glob",
-            lua.create_function(move |lua, pattern: String| {
-                let full = scope.resolve(&pattern)?;
-                let pattern = full.to_string_lossy().replace('\\', "/");
-                let out = lua.create_table()?;
-                let mut i = 1usize;
-                for entry in glob::glob(&pattern)
-                    .map_err(|e| LehuaError::msg(format!("invalid glob pattern: {e}")))?
-                {
-                    if let Ok(path) = entry {
-                        out.raw_seti(i, path.to_string_lossy().into_owned())?;
-                        i += 1;
+            lua.create_async_function(move |lua, pattern: String| {
+                let scope = scope.clone();
+                async move {
+                    let full = scope.resolve(&pattern)?;
+                    let pattern = full.to_string_lossy().replace('\\', "/");
+                    let paths = run_blocking(move || {
+                        let mut out: Vec<String> = Vec::new();
+                        for entry in glob::glob(&pattern)
+                            .map_err(|e| LehuaError::msg(format!("invalid glob pattern: {e}")))?
+                        {
+                            if let Ok(path) = entry {
+                                out.push(path.to_string_lossy().into_owned());
+                            }
+                        }
+                        Ok(out)
+                    })
+                    .await?;
+                    let out = lua.create_table()?;
+                    for (i, path) in (1usize..).zip(paths) {
+                        out.raw_seti(i, path)?;
                     }
+                    Ok(out)
                 }
-                Ok(out)
             })?,
         )?;
     }
@@ -444,14 +538,25 @@ pub fn build(ctx: &LibCtx) -> mlua::Result<Value> {
         let scope = scope.clone();
         t.set(
             "readDir",
-            lua.create_function(move |lua, p: String| {
-                let full = scope.resolve(&p)?;
-                let out = lua.create_table()?;
-                for (i, entry) in (1usize..).zip(std::fs::read_dir(&full).map_err(mlua::Error::external)?) {
-                    let entry = entry.map_err(mlua::Error::external)?;
-                    out.raw_seti(i, entry.file_name().to_string_lossy().into_owned())?;
+            lua.create_async_function(move |lua, p: String| {
+                let scope = scope.clone();
+                async move {
+                    let full = scope.resolve(&p)?;
+                    let names = run_blocking(move || {
+                        let mut out: Vec<String> = Vec::new();
+                        for entry in std::fs::read_dir(&full).map_err(mlua::Error::external)? {
+                            let entry = entry.map_err(mlua::Error::external)?;
+                            out.push(entry.file_name().to_string_lossy().into_owned());
+                        }
+                        Ok(out)
+                    })
+                    .await?;
+                    let out = lua.create_table()?;
+                    for (i, name) in (1usize..).zip(names) {
+                        out.raw_seti(i, name)?;
+                    }
+                    Ok(out)
                 }
-                Ok(out)
             })?,
         )?;
     }
@@ -460,17 +565,31 @@ pub fn build(ctx: &LibCtx) -> mlua::Result<Value> {
         let scope = scope.clone();
         t.set(
             "open",
-            lua.create_function(move |lua, args: (String, Option<String>)| {
-                let (p, mode) = args;
-                let mode = mode.unwrap_or_else(|| "r".to_string());
-                let full = scope.resolve(&p)?;
-                let file = open_with_mode(&full, &mode).map_err(mlua::Error::external)?;
-                lua.create_userdata(FileHandle::new(file))
+            lua.create_async_function(move |lua, args: (String, Option<String>)| {
+                let scope = scope.clone();
+                async move {
+                    let (p, mode) = args;
+                    let mode = mode.unwrap_or_else(|| "r".to_string());
+                    let full = scope.resolve(&p)?;
+                    let file = run_blocking(move || {
+                        open_with_mode(&full, &mode).map_err(mlua::Error::external)
+                    })
+                    .await?;
+                    lua.create_userdata(FileHandle::new(file))
+                }
             })?,
         )?;
     }
 
     Ok(Value::Table(t))
+}
+
+async fn run_blocking<T: Send + 'static>(
+    f: impl FnOnce() -> mlua::Result<T> + Send + 'static,
+) -> mlua::Result<T> {
+    tokio::task::spawn_blocking(f)
+        .await
+        .map_err(|e| mlua::Error::external(LehuaError::msg(format!("fs: join error: {e}"))))?
 }
 
 fn copy_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
@@ -535,119 +654,196 @@ fn open_with_mode(path: &Path, mode: &str) -> std::io::Result<File> {
     opts.open(path)
 }
 
+struct FileState {
+    file: File,
+    rbuf: Vec<u8>,
+}
+
+type SharedFile = Arc<Mutex<Option<FileState>>>;
+
 struct FileHandle {
-    file: RefCell<Option<File>>,
-    rbuf: RefCell<Vec<u8>>,
+    state: SharedFile,
 }
 
 impl FileHandle {
     fn new(file: File) -> Self {
         FileHandle {
-            file: RefCell::new(Some(file)),
-            rbuf: RefCell::new(Vec::new()),
+            state: Arc::new(Mutex::new(Some(FileState {
+                file,
+                rbuf: Vec::new(),
+            }))),
         }
     }
+}
 
-    fn with_file<T>(&self, f: impl FnOnce(&mut File) -> std::io::Result<T>) -> mlua::Result<T> {
-        let mut guard = self.file.borrow_mut();
-        let file = guard
+async fn with_state<T: Send + 'static>(
+    state: SharedFile,
+    f: impl FnOnce(&mut FileState) -> mlua::Result<T> + Send + 'static,
+) -> mlua::Result<T> {
+    tokio::task::spawn_blocking(move || {
+        let mut guard = state
+            .lock()
+            .map_err(|_| LehuaError::msg("fs: file lock poisoned"))?;
+        let s = guard
             .as_mut()
             .ok_or_else(|| LehuaError::msg("attempt to use a closed file"))?;
-        f(file).map_err(mlua::Error::external)
-    }
+        f(s)
+    })
+    .await
+    .map_err(|e| mlua::Error::external(LehuaError::msg(format!("fs: join error: {e}"))))?
 }
 
 impl UserData for FileHandle {
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
-        methods.add_method("read", |lua, this, fmt: Option<Value>| read_impl(lua, this, fmt));
-
-        methods.add_method("write", |_, this, args: Variadic<Value>| {
-            rewind_buffer(this)?;
-            this.with_file(|f| {
-                for a in args.iter() {
-                    match a {
-                        Value::String(s) => f.write_all(&s.as_bytes()[..])?,
-                        Value::Integer(i) => f.write_all(i.to_string().as_bytes())?,
-                        Value::Number(n) => f.write_all(n.to_string().as_bytes())?,
-                        _ => {
-                            return Err(std::io::Error::new(
-                                std::io::ErrorKind::InvalidInput,
-                                "file:write expects strings or numbers",
-                            ))
-                        }
-                    }
+        methods.add_async_method("read", |lua, this, fmt: Option<Value>| {
+            let state = this.state.clone();
+            let spec = parse_read_spec(&fmt);
+            async move {
+                let spec = spec?;
+                let out = with_state(state, move |s| read_blocking(s, spec)).await?;
+                match out {
+                    ReadOut::Nil => Ok(Value::Nil),
+                    ReadOut::Bytes(bytes) => Ok(Value::String(lua.create_string(bytes)?)),
+                    ReadOut::Number(n) => Ok(Value::Number(n)),
                 }
-                Ok(())
-            })?;
-            Ok(())
+            }
         });
 
-        methods.add_method("seek", |_, this, args: (Option<String>, Option<i64>)| {
-            let (whence, offset) = args;
-            let whence = whence.unwrap_or_else(|| "cur".to_string());
-            let offset = offset.unwrap_or(0);
-            rewind_buffer(this)?;
-            let pos = this.with_file(|f| {
-                let from = match whence.as_str() {
-                    "set" => SeekFrom::Start(offset.max(0) as u64),
-                    "end" => SeekFrom::End(offset),
-                    _ => SeekFrom::Current(offset),
-                };
-                f.seek(from)
-            })?;
-            Ok(pos as i64)
+        methods.add_async_method("write", |_, this, args: Variadic<Value>| {
+            let state = this.state.clone();
+            let data = write_bytes(&args);
+            async move {
+                let data = data?;
+                with_state(state, move |s| {
+                    rewind_state(s)?;
+                    s.file.write_all(&data).map_err(mlua::Error::external)?;
+                    Ok(())
+                })
+                .await
+            }
+        });
+
+        methods.add_async_method("seek", |_, this, args: (Option<String>, Option<i64>)| {
+            let state = this.state.clone();
+            async move {
+                let (whence, offset) = args;
+                let whence = whence.unwrap_or_else(|| "cur".to_string());
+                let offset = offset.unwrap_or(0);
+                let pos = with_state(state, move |s| {
+                    rewind_state(s)?;
+                    let from = match whence.as_str() {
+                        "set" => SeekFrom::Start(offset.max(0) as u64),
+                        "end" => SeekFrom::End(offset),
+                        _ => SeekFrom::Current(offset),
+                    };
+                    s.file.seek(from).map_err(mlua::Error::external)
+                })
+                .await?;
+                Ok(pos as i64)
+            }
         });
 
         methods.add_function("lines", |lua, this_ud: AnyUserData| {
+            let state = this_ud.borrow::<FileHandle>()?.state.clone();
             lua.create_function(move |lua, ()| {
-                let handle = this_ud.borrow::<FileHandle>()?;
-                read_impl(lua, &handle, Some(Value::String(lua.create_string("l")?)))
+                let mut guard = state
+                    .lock()
+                    .map_err(|_| LehuaError::msg("fs: file lock poisoned"))?;
+                let s = guard
+                    .as_mut()
+                    .ok_or_else(|| LehuaError::msg("attempt to use a closed file"))?;
+                match read_line(s)? {
+                    Some(mut line) => {
+                        if line.last() == Some(&b'\n') {
+                            line.pop();
+                            if line.last() == Some(&b'\r') {
+                                line.pop();
+                            }
+                        }
+                        Ok(Value::String(lua.create_string(&line)?))
+                    }
+                    None => Ok(Value::Nil),
+                }
             })
         });
 
-        methods.add_method("flush", |_, this, _: ()| {
-            this.with_file(|f| f.flush())?;
-            Ok(())
+        methods.add_async_method("flush", |_, this, _: ()| {
+            let state = this.state.clone();
+            async move {
+                with_state(state, |s| {
+                    s.file.flush().map_err(mlua::Error::external)?;
+                    Ok(())
+                })
+                .await
+            }
         });
 
-        methods.add_method("close", |_, this, _: ()| {
-            this.rbuf.borrow_mut().clear();
-            *this.file.borrow_mut() = None;
-            Ok(())
+        methods.add_async_method("close", |_, this, _: ()| {
+            let state = this.state.clone();
+            async move {
+                tokio::task::spawn_blocking(move || -> mlua::Result<()> {
+                    let mut guard = state
+                        .lock()
+                        .map_err(|_| mlua::Error::from(LehuaError::msg("fs: file lock poisoned")))?;
+                    let _ = guard.take();
+                    Ok(())
+                })
+                .await
+                .map_err(|e| {
+                    mlua::Error::external(LehuaError::msg(format!("fs: join error: {e}")))
+                })??;
+                Ok(())
+            }
         });
     }
 }
 
-fn rewind_buffer(this: &FileHandle) -> mlua::Result<()> {
-    let n = this.rbuf.borrow().len();
+fn write_bytes(args: &Variadic<Value>) -> mlua::Result<Vec<u8>> {
+    let mut out = Vec::new();
+    for a in args.iter() {
+        match a {
+            Value::String(s) => out.extend_from_slice(&s.as_bytes()[..]),
+            Value::Integer(i) => out.extend_from_slice(i.to_string().as_bytes()),
+            Value::Number(n) => out.extend_from_slice(n.to_string().as_bytes()),
+            _ => {
+                return Err(mlua::Error::external(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "file:write expects strings or numbers",
+                )))
+            }
+        }
+    }
+    Ok(out)
+}
+
+fn rewind_state(s: &mut FileState) -> mlua::Result<()> {
+    let n = s.rbuf.len();
     if n > 0 {
-        this.with_file(|f| f.seek(SeekFrom::Current(-(n as i64))))?;
-        this.rbuf.borrow_mut().clear();
+        s.file
+            .seek(SeekFrom::Current(-(n as i64)))
+            .map_err(mlua::Error::external)?;
+        s.rbuf.clear();
     }
     Ok(())
 }
 
-fn read_impl(lua: &Lua, this: &FileHandle, fmt: Option<Value>) -> mlua::Result<Value> {
-    if let Some(Value::Integer(n)) = &fmt {
-        let n = (*n).max(0) as usize;
-        if n == 0 {
-            if this.rbuf.borrow().is_empty() {
-                let mut probe = [0u8; 1];
-                let got = this.with_file(|f| f.read(&mut probe))?;
-                if got == 0 {
-                    return Ok(Value::Nil);
-                }
-                this.rbuf.borrow_mut().push(probe[0]);
-            }
-            return Ok(Value::String(lua.create_string("")?));
-        }
-        let bytes = read_n(this, n)?;
-        if bytes.is_empty() {
-            return Ok(Value::Nil);
-        }
-        return Ok(Value::String(lua.create_string(bytes)?));
-    }
+enum ReadSpec {
+    Count(usize),
+    All,
+    Line(bool),
+    Number,
+}
 
+enum ReadOut {
+    Nil,
+    Bytes(Vec<u8>),
+    Number(f64),
+}
+
+fn parse_read_spec(fmt: &Option<Value>) -> mlua::Result<ReadSpec> {
+    if let Some(Value::Integer(n)) = fmt {
+        return Ok(ReadSpec::Count((*n).max(0) as usize));
+    }
     let spec = match fmt {
         Some(Value::String(s)) => s.to_string_lossy().to_string(),
         None => "l".to_string(),
@@ -658,54 +854,80 @@ fn read_impl(lua: &Lua, this: &FileHandle, fmt: Option<Value>) -> mlua::Result<V
         }
     };
     let spec = spec.trim_start_matches('*');
-
     match spec {
-        "a" => {
-            let mut data = this.rbuf.borrow_mut().split_off(0);
-            let mut rest = Vec::new();
-            this.with_file(|f| f.read_to_end(&mut rest))?;
-            data.extend_from_slice(&rest);
-            Ok(Value::String(lua.create_string(data)?))
-        }
-        "l" | "L" => match read_line(this)? {
-            Some(mut line) => {
-                if spec == "l" && line.last() == Some(&b'\n') {
-                    line.pop();
-                    if line.last() == Some(&b'\r') {
-                        line.pop();
-                    }
-                }
-                Ok(Value::String(lua.create_string(line)?))
-            }
-            None => Ok(Value::Nil),
-        },
-        "n" => match read_line(this)? {
-            Some(line) => {
-                let s = String::from_utf8_lossy(&line);
-                match s.trim().parse::<f64>() {
-                    Ok(num) => Ok(Value::Number(num)),
-                    Err(_) => Ok(Value::Nil),
-                }
-            }
-            None => Ok(Value::Nil),
-        },
+        "a" => Ok(ReadSpec::All),
+        "l" => Ok(ReadSpec::Line(true)),
+        "L" => Ok(ReadSpec::Line(false)),
+        "n" => Ok(ReadSpec::Number),
         other => Err(mlua::Error::external(LehuaError::msg(format!(
             "invalid read format '{other}'"
         )))),
     }
 }
 
-fn read_n(this: &FileHandle, n: usize) -> mlua::Result<Vec<u8>> {
-    let mut out = Vec::with_capacity(n.min(1 << 20));
-    {
-        let mut buf = this.rbuf.borrow_mut();
-        let take = n.min(buf.len());
-        out.extend(buf.drain(..take));
+fn read_blocking(s: &mut FileState, spec: ReadSpec) -> mlua::Result<ReadOut> {
+    match spec {
+        ReadSpec::Count(n) => {
+            if n == 0 {
+                if s.rbuf.is_empty() {
+                    let mut probe = [0u8; 1];
+                    let got = s.file.read(&mut probe).map_err(mlua::Error::external)?;
+                    if got == 0 {
+                        return Ok(ReadOut::Nil);
+                    }
+                    s.rbuf.push(probe[0]);
+                }
+                return Ok(ReadOut::Bytes(Vec::new()));
+            }
+            let bytes = read_n(s, n)?;
+            if bytes.is_empty() {
+                return Ok(ReadOut::Nil);
+            }
+            Ok(ReadOut::Bytes(bytes))
+        }
+        ReadSpec::All => {
+            let mut data = s.rbuf.split_off(0);
+            let mut rest = Vec::new();
+            s.file.read_to_end(&mut rest).map_err(mlua::Error::external)?;
+            data.extend_from_slice(&rest);
+            Ok(ReadOut::Bytes(data))
+        }
+        ReadSpec::Line(strip) => match read_line(s)? {
+            Some(mut line) => {
+                if strip && line.last() == Some(&b'\n') {
+                    line.pop();
+                    if line.last() == Some(&b'\r') {
+                        line.pop();
+                    }
+                }
+                Ok(ReadOut::Bytes(line))
+            }
+            None => Ok(ReadOut::Nil),
+        },
+        ReadSpec::Number => match read_line(s)? {
+            Some(line) => {
+                let text = String::from_utf8_lossy(&line);
+                match text.trim().parse::<f64>() {
+                    Ok(num) => Ok(ReadOut::Number(num)),
+                    Err(_) => Ok(ReadOut::Nil),
+                }
+            }
+            None => Ok(ReadOut::Nil),
+        },
     }
+}
+
+fn read_n(s: &mut FileState, n: usize) -> mlua::Result<Vec<u8>> {
+    let mut out = Vec::with_capacity(n.min(1 << 20));
+    let take = n.min(s.rbuf.len());
+    out.extend(s.rbuf.drain(..take));
     let mut chunk = [0u8; 64 * 1024];
     while out.len() < n {
         let want = (n - out.len()).min(chunk.len());
-        let got = this.with_file(|f| f.read(&mut chunk[..want]))?;
+        let got = s
+            .file
+            .read(&mut chunk[..want])
+            .map_err(mlua::Error::external)?;
         if got == 0 {
             break;
         }
@@ -714,23 +936,21 @@ fn read_n(this: &FileHandle, n: usize) -> mlua::Result<Vec<u8>> {
     Ok(out)
 }
 
-fn read_line(this: &FileHandle) -> mlua::Result<Option<Vec<u8>>> {
+fn read_line(s: &mut FileState) -> mlua::Result<Option<Vec<u8>>> {
     loop {
-        let newline = this.rbuf.borrow().iter().position(|&b| b == b'\n');
-        if let Some(pos) = newline {
-            let line: Vec<u8> = this.rbuf.borrow_mut().drain(..=pos).collect();
+        if let Some(pos) = s.rbuf.iter().position(|&b| b == b'\n') {
+            let line: Vec<u8> = s.rbuf.drain(..=pos).collect();
             return Ok(Some(line));
         }
         let mut chunk = [0u8; 4096];
-        let got = this.with_file(|f| f.read(&mut chunk))?;
+        let got = s.file.read(&mut chunk).map_err(mlua::Error::external)?;
         if got == 0 {
-            let mut buf = this.rbuf.borrow_mut();
-            if buf.is_empty() {
+            if s.rbuf.is_empty() {
                 return Ok(None);
             }
-            let line = buf.split_off(0);
+            let line = s.rbuf.split_off(0);
             return Ok(Some(line));
         }
-        this.rbuf.borrow_mut().extend_from_slice(&chunk[..got]);
+        s.rbuf.extend_from_slice(&chunk[..got]);
     }
 }

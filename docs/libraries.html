@@ -66,6 +66,8 @@ print(process.platform)</code></pre></div>
 
 fs.write("./log.txt", "hello")
 print(process.platform)</code></pre></div>
+      <h2>Long operations yield</h2>
+      <p>Library functions that can take a while - file reads and writes, database queries, network calls, archives, password hashing, image resizing, reading standard input - only block the coroutine that called them. The rest of the program keeps running: spawned tasks keep ticking, heartbeats keep firing, and other coroutines run while one waits. Call them from inside <code>task.spawn</code> to run several at once.</p>
     </article>
   </main>
   <aside class="toc" id="toc" aria-label="On this page"></aside>

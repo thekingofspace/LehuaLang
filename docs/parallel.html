@@ -48,7 +48,11 @@ while true do
     channel:Push(n * 2)
 end</code></pre></div>
       <p>A <code>Port</code> has <code>Push(value)</code>, <code>Pop()</code> which yields, <code>TryPop()</code> which does not yield, <code>Close()</code>, and <code>IsClosed()</code>.</p>
-      <div class="note"><div class="note-title">Note</div><p>Only simple values cross a Port. That means nil, booleans, numbers, strings, and plain tables. Values are copied, not shared. Functions, threads, and userdata cannot cross, since each worker is a separate VM. The one exception is a <a href="cache.html">mem cache</a> handle, which crosses by name.</p></div>
+      <div class="note"><div class="note-title">Note</div><p>Only simple values cross a Port. That means nil, booleans, numbers, strings, buffers, vectors, and plain tables. Values are copied, not shared. Functions, threads, and userdata cannot cross, since each worker is a separate VM. The one exception is a <a href="cache.html">mem cache</a> handle, which crosses by name.</p></div>
+      <h2>Lifetime</h2>
+      <p>Workers live as long as the main program does. When the main program closes, because its last task finished or because it called <code>process.exit</code>, every worker is asked to stop: a worker that is waiting wakes up and shuts down, and a worker that is busy computing is interrupted. Each worker runs its <a href="process.html"><code>process.BindToClose</code></a> handlers and drops its <a href="messenger.html">messenger</a> subscriptions before its thread ends, and the runtime gives workers a few seconds of grace before it stops waiting.</p>
+      <p>Only a real close triggers this. A main program that has finished executing but is still alive, because a subscription, a heartbeat, or a pending task is holding it open, leaves its workers running.</p>
+
       <h2>Beyond Ports</h2>
       <p>Ports pair two threads. For broadcast-style events that any thread can hear, use the <a href="messenger.html">messenger</a> global. For shared state with expiring entries, or to move richer objects like datetimes, regexes, and database handles between threads, use a <a href="cache.html">mem cache</a>.</p>
     </article>
