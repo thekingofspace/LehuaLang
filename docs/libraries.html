@@ -31,6 +31,7 @@
       <p class="eyebrow">Guides</p>
       <h1>Including libraries</h1>
       <p>Lehua ships with its own libraries. They are opt in per file. To use one, add an include header at the top of the file. Only the libraries you include are set up and available to your code - and when <a href="building.html">building a program</a>, Lehua can compile a runtime that only contains those libraries.</p>
+      <p>A related header, <code>--#includestring</code>, bakes a data file into your program and hands it back through <code>frominclude</code>. See <a href="includestring.html">Included files</a>.</p>
       <table>
       <thead><tr><th>Library</th><th>What it does</th></tr></thead>
       <tbody>

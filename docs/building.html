@@ -37,6 +37,7 @@
 ./dist/hello.exe</code></pre></div>
       <p>Files that end in <code>.d.luau</code> hold type definitions only and are skipped when building. Modules that nothing reaches are skipped too, which keeps the output small.</p>
       <p>In a built program, <code>__dirname</code> is the folder that holds the executable. So paths written as <code>./file</code> read and write next to the exe.</p>
+      <p>To carry data along inside the executable instead of reading it from disk, bake it in with an <a href="includestring.html">included file</a>. The bytes are packed into the payload beside your code and read back with <code>frominclude</code>.</p>
       <h3>How the size is decided</h3>
       <p>The built-in libraries are compiled Rust code inside the runtime, so they cannot be trimmed out of an already built runtime - an include header decides what your program can use, not what the file contains. To get an executable that truly only contains the libraries you include, <code>lehua build</code> can compile a matching runtime on the spot. It does this when it can find the Lehua source and a Rust toolchain; otherwise it embeds the full runtime and prints a note.</p>
       <div class="codeblock"><pre><code class="language-bash"># tell lehua where its source lives (only needed once, if lehua was not built there)

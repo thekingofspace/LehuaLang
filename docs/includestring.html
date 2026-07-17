@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Included files · Lehua</title>
+<meta name="description" content="Included files. Lehua is a standalone Luau runtime that compiles to a single executable.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='6' fill='%23d94a3d'/%3E%3Cg fill='%23e5675b'%3E%3Cellipse cx='16' cy='6' rx='3.4' ry='5'/%3E%3Cellipse cx='16' cy='26' rx='3.4' ry='5'/%3E%3Cellipse cx='6' cy='16' rx='5' ry='3.4'/%3E%3Cellipse cx='26' cy='16' rx='5' ry='3.4'/%3E%3C/g%3E%3Ccircle cx='16' cy='16' r='3' fill='%23ffd24d'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="assets/styles.css">
+<script>(function(){try{var t=localStorage.getItem('lehua-theme');if(!t)t=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light';document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="navbar">
+  <button id="menu-btn" class="icon-btn" aria-label="Open menu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16" stroke-linecap="round"/></svg></button>
+  <a class="brand" href="index.html"><svg viewBox="0 0 32 32"><circle cx="16" cy="16" r="6" fill="#d94a3d"/><g fill="#e5675b"><ellipse cx="16" cy="6" rx="3.4" ry="5"/><ellipse cx="16" cy="26" rx="3.4" ry="5"/><ellipse cx="6" cy="16" rx="5" ry="3.4"/><ellipse cx="26" cy="16" rx="5" ry="3.4"/></g><circle cx="16" cy="16" r="3" fill="#ffd24d"/></svg> Lehua</a>
+  <div class="nav-spacer"></div>
+  <nav class="nav-links">
+    <a class="docs" href="introduction.html">Docs</a>
+    <a class="gh" href="https://github.com/thekingofspace/LehuaLang"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.58 2 12.25c0 4.53 2.87 8.37 6.84 9.73.5.1.68-.22.68-.49v-1.7c-2.78.62-3.37-1.22-3.37-1.22-.45-1.18-1.11-1.5-1.11-1.5-.91-.64.07-.62.07-.62 1 .07 1.53 1.06 1.53 1.06.9 1.58 2.36 1.12 2.94.86.09-.67.35-1.12.63-1.38-2.22-.26-4.56-1.14-4.56-5.07 0-1.12.39-2.03 1.03-2.75-.1-.26-.45-1.3.1-2.71 0 0 .84-.28 2.75 1.05a9.3 9.3 0 015 0c1.91-1.33 2.75-1.05 2.75-1.05.55 1.41.2 2.45.1 2.71.64.72 1.03 1.63 1.03 2.75 0 3.94-2.34 4.81-4.57 5.06.36.32.68.94.68 1.9v2.82c0 .27.18.6.69.49A10.02 10.02 0 0022 12.25C22 6.58 17.52 2 12 2z"/></svg> GitHub</a>
+  </nav>
+  <button id="theme-btn" class="icon-btn" aria-label="Toggle theme"><svg id="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z" stroke-linejoin="round"/></svg><svg id="icon-sun" style="display:none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.4 1.4M17.6 17.6L19 19M19 5l-1.4 1.4M6.4 17.6L5 19" stroke-linecap="round"/></svg></button>
+</header>
+<div class="backdrop" id="backdrop"></div>
+<div class="layout">
+  <aside class="sidebar" id="sidebar">
+    <label class="side-search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3" stroke-linecap="round"/></svg><input id="side-search" type="text" placeholder="Search docs" aria-label="Search the docs"><kbd>Ctrl K</kbd></label>
+    <nav id="side-nav" class="side-nav"></nav>
+  </aside>
+  <main class="content">
+    <article class="doc-page">
+      <p class="eyebrow">Guides</p>
+      <h1>Included files</h1>
+      <p>The <code>--#includestring</code> header bakes a file into your program, and the <code>frominclude</code> keyword reads it back as a string at run time. This is how you ship data next to your code: a config file, an HTML template, a shader, an embedded image, a license. When you <a href="building.html">build a program</a>, the file's bytes are packed into the executable, so the running program carries its data with it and does not need the original file on disk.</p>
+
+      <div class="note"><div class="note-title">Included files versus fs</div><p>Use <a href="fs.html">fs</a> when you want to read or write files that live alongside the program at run time. Use an included file when you want the data to travel inside the program itself. An included file is read only and always there, even when the executable is copied somewhere new.</p></div>
+
+      <h2>Declaring and reading</h2>
+      <p>Add a header near the top of a file. Each entry gives a name and a path. The name is how you reach the file from code; the path says which file to bake.</p>
+      <div class="codeblock"><div class="window-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="window-title">src/main.luau</span></div><pre><code class="language-luau">--#includestring[Config: "./config.json", Banner: "./banner.txt"]
+
+local config = frominclude("Config")
+local banner = frominclude("Banner")
+
+print(banner)
+local settings = serde.decode("json", config)</code></pre></div>
+      <p><code>frominclude(name)</code> returns the file's contents as a string. The string holds the exact bytes of the file, so binary data such as an image or a compressed archive comes back untouched. Reading the same name again returns the same value, so it is cheap to call wherever you need it.</p>
+
+      <h2>Paths are always file relative</h2>
+      <p>An included path is resolved against the folder of the file that declares it, never against roots or aliases. This is the one rule, and it never changes:</p>
+      <table>
+      <thead><tr><th>In the header</th><th>Resolves to</th></tr></thead>
+      <tbody>
+      <tr><td><code>./data.txt</code></td><td>A file next to the current file.</td></tr>
+      <tr><td><code>@self/data.txt</code></td><td>The same thing. <code>@self</code> is the current file's folder.</td></tr>
+      <tr><td><code>../shared/data.txt</code></td><td>Up one folder, then into <code>shared</code>.</td></tr>
+      <tr><td><code>assets/logo.png</code></td><td>A plain path is relative to the current folder too.</td></tr>
+      </tbody>
+      </table>
+      <p>Because every path is anchored to the declaring file, moving a folder keeps its included files working without changing the header.</p>
+
+      <h2>Included files are file specific</h2>
+      <p>An included file belongs to the one file that declared it. Only that file can read it, and only by the name it chose. A module that wants its own data declares its own header, even for the very same file on disk.</p>
+      <div class="codeblock"><div class="window-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="window-title">src/report/page.luau</span></div><pre><code class="language-luau">--#includestring[Template: "@self/template.html"]
+
+local html = frominclude("Template")   -- this file's own include
+-- frominclude("Config") here would error: Config was declared in main.luau, not here</code></pre></div>
+
+      <h2>Naming</h2>
+      <p>The name is a label of your choosing, separate from the path. If you leave the name out, it defaults to the path itself, which is handy for a one off.</p>
+      <div class="codeblock"><pre><code class="language-luau">--#includestring["./notes.md"]
+
+local notes = frominclude("./notes.md")</code></pre></div>
+      <p>Declaring the same name twice keeps the first path. Spread entries across several <code>--#includestring</code> lines or list them in one, whichever reads better.</p>
+
+      <h2>What happens at build time</h2>
+      <p>When you run <code>lehua build</code>, each included file is read from disk and packed into the executable. During <code>lehua run</code> the file is read the same way, so both behave alike. If a declared file cannot be found while building, the build prints a note and continues; the program will still run, and the missing file only becomes an error if <code>frominclude</code> actually reaches for it and cannot find it on disk either.</p>
+
+      <div class="note"><div class="note-title">Keep large data in mind</div><p>Included files live inside the executable and in memory once read. That is perfect for configs, templates, and modest assets. For very large or optional data that the program may never touch, a file read through <a href="fs.html">fs</a> at run time is the lighter choice.</p></div>
+
+      <h2>Reference</h2>
+      <table>
+      <thead><tr><th>Keyword</th><th>Signature</th><th>Description</th></tr></thead>
+      <tbody>
+      <tr><td><code>--#includestring</code></td><td><code>--#includestring[Name: "./path", ...]</code></td><td>A header that bakes one or more files into the program, each under a chosen name.</td></tr>
+      <tr><td><code>frominclude</code></td><td><code>frominclude(name): string</code></td><td>The bytes of an included file, as a string. Errors if the name was not declared in this file.</td></tr>
+      </tbody>
+      </table>
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer>Lehua is built in Rust on mlua and tokio. Made for people who love Luau.</footer>
+<script src="assets/site.js" defer></script>
+</body>
+</html>

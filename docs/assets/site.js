@@ -25,6 +25,7 @@
       { t: "Metamethods", h: "metamethods.html" },
       { t: "Globals", h: "globals.html" },
       { t: "Including libraries", h: "libraries.html" },
+      { t: "Included files", h: "includestring.html" },
       { t: "Parallel", h: "parallel.html" },
       { t: "Messenger", h: "messenger.html" },
       { t: "Native DLLs", h: "dll.html" },
