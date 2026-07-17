@@ -1,5 +1,5 @@
 {
-    "luau-lsp.types.definitionFiles": ["types.d.luau"],
+    "luau-lsp.types.definitionFiles": {"lehua":"types.d.luau"},
     "luau-lsp.platform.type": "standard",
     "luau-lsp.sourcemap.enabled": false
 }
