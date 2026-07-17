@@ -989,6 +989,7 @@ export type ClassSpec = {
 export type InterfaceSpec = { string } | { Name: string?, Requires: { string } }
 
 declare function parallel(path: string, ...: any): Port
+declare function frominclude(name: string): string
 
 declare function NewClassData(spec: ClassSpec): ClassData
 declare function BuildClassData(class: ClassData, ...: any): any

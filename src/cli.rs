@@ -308,11 +308,13 @@ fn execute_bundle(
     flat_dirs: bool,
 ) -> Result<()> {
     let dlls = Arc::new(bundle.dll_bytes());
+    let strings = Arc::new(bundle.string_bytes());
     let files = Arc::new(bundle.files);
     let provider = Arc::new(BundleProvider::new(
         base_dir,
         files,
         dlls,
+        strings,
         extract_dir,
         !flat_dirs,
     ));

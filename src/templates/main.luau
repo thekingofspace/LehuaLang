@@ -1,6 +1,6 @@
 --#include[fs]
 
--- `require`, `parallel`, `__dirname`, `__filename` are provided per-module.
+-- `require`, `parallel`, `frominclude`, `__dirname`, `__filename` are provided per-module.
 print("Lehua is running from " .. __dirname)
 
 -- Roots are packages that live under roots/ - require them by name.

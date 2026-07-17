@@ -875,12 +875,14 @@ async fn execute_module(
 
     let require_fn = make_require(lua, ctx.clone(), id)?;
     let parallel_fn = parallel::make_parallel(lua, ctx.engine.clone(), id)?;
+    let frominclude_fn = make_frominclude(lua, ctx.clone(), id, directives.include_strings.clone())?;
     let dirname = ctx.engine.real_dir_of(id).to_string_lossy().into_owned();
     let filename = ctx.engine.real_file_of(id).to_string_lossy().into_owned();
 
     let mut args: Vec<Value> = vec![
         Value::Function(require_fn),
         Value::Function(parallel_fn),
+        Value::Function(frominclude_fn),
         Value::String(lua.create_string(&dirname)?),
         Value::String(lua.create_string(&filename)?),
     ];
@@ -947,7 +949,7 @@ fn compile_module(
     includes: &[String],
     injects: &[String],
 ) -> mlua::Result<Function> {
-    let mut params = String::from("require, parallel, __dirname, __filename");
+    let mut params = String::from("require, parallel, frominclude, __dirname, __filename");
     for name in includes.iter().chain(injects.iter()) {
         params.push_str(", ");
         params.push_str(name);
@@ -974,6 +976,56 @@ fn make_require(lua: &Lua, ctx: Rc<VmContext>, from_id: &str) -> mlua::Result<Fu
         let ctx = ctx.clone();
         let from_id = from_id.clone();
         async move { require_impl(&lua, &ctx, &from_id, &request).await }
+    })
+}
+
+fn make_frominclude(
+    lua: &Lua,
+    ctx: Rc<VmContext>,
+    from_id: &str,
+    entries: Vec<(String, String)>,
+) -> mlua::Result<Function> {
+    let from_id = from_id.to_string();
+    let cache = lua.create_table()?;
+    lua.create_async_function(move |lua, key: String| {
+        let ctx = ctx.clone();
+        let from_id = from_id.clone();
+        let entries = entries.clone();
+        let cache = cache.clone();
+        async move {
+            if let Value::String(hit) = cache.raw_get::<Value>(key.as_str())? {
+                return Ok(Value::String(hit));
+            }
+            let spec = match entries.iter().find(|(k, _)| *k == key) {
+                Some((_, spec)) => spec.clone(),
+                None => {
+                    return Err(LehuaError::msg(format!(
+                        "frominclude: '{key}' was not declared with --#includestring in this file"
+                    ))
+                    .into())
+                }
+            };
+            let baked = vpath::resolve_include(&from_id, &spec);
+            let provider = ctx.engine.provider.clone();
+            let bytes = tokio::task::spawn_blocking(move || provider.included_bytes(&baked))
+                .await
+                .map_err(|e| {
+                    mlua::Error::external(LehuaError::msg(format!(
+                        "frominclude: join error: {e}"
+                    )))
+                })?;
+            match bytes {
+                Some(bytes) => {
+                    let text = lua.create_string(&bytes)?;
+                    cache.raw_set(key.as_str(), text.clone())?;
+                    Ok(Value::String(text))
+                }
+                None => Err(LehuaError::msg(format!(
+                    "frominclude: '{key}' ('{spec}') was neither baked into the program nor found on disk"
+                ))
+                .into()),
+            }
+        }
     })
 }
 

@@ -9,6 +9,9 @@ pub trait ModuleProvider: Send + Sync {
     fn exists(&self, id: &str) -> bool;
     fn read(&self, id: &str) -> Result<String>;
     fn binary_path(&self, id: &str) -> Result<PathBuf>;
+    fn included_bytes(&self, _id: &str) -> Option<Vec<u8>> {
+        None
+    }
 }
 
 pub struct FsProvider {
@@ -42,6 +45,9 @@ impl ModuleProvider for FsProvider {
             message: format!("native library not found at '{}'", self.real(id).display()),
         })
     }
+    fn included_bytes(&self, id: &str) -> Option<Vec<u8>> {
+        std::fs::read(self.real(id)).ok()
+    }
 }
 
 fn base_name(id: &str) -> &str {
@@ -56,6 +62,7 @@ pub struct BundleProvider {
     base_dir: PathBuf,
     files: Arc<BTreeMap<String, String>>,
     dlls: Arc<BTreeMap<String, Vec<u8>>>,
+    strings: Arc<BTreeMap<String, Vec<u8>>>,
     extract_dir: PathBuf,
     extracted: Mutex<BTreeMap<String, PathBuf>>,
     prefer_disk: bool,
@@ -66,6 +73,7 @@ impl BundleProvider {
         base_dir: impl Into<PathBuf>,
         files: Arc<BTreeMap<String, String>>,
         dlls: Arc<BTreeMap<String, Vec<u8>>>,
+        strings: Arc<BTreeMap<String, Vec<u8>>>,
         extract_dir: impl Into<PathBuf>,
         prefer_disk: bool,
     ) -> Self {
@@ -73,6 +81,7 @@ impl BundleProvider {
             base_dir: base_dir.into(),
             files,
             dlls,
+            strings,
             extract_dir: extract_dir.into(),
             extracted: Mutex::new(BTreeMap::new()),
             prefer_disk,
@@ -142,5 +151,17 @@ impl ModuleProvider for BundleProvider {
                 base_name(id)
             ),
         })
+    }
+    fn included_bytes(&self, id: &str) -> Option<Vec<u8>> {
+        if let Some(bytes) = self.strings.get(id) {
+            return Some(bytes.clone());
+        }
+        if self.prefer_disk {
+            let path = self.base_dir.join(crate::vpath::to_native(id));
+            if let Ok(bytes) = std::fs::read(&path) {
+                return Some(bytes);
+            }
+        }
+        None
     }
 }

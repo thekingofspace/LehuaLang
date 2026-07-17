@@ -2,8 +2,16 @@
 pub struct Directives {
     pub includes: Vec<String>,
     pub injects: Vec<String>,
+    pub include_strings: Vec<(String, String)>,
 }
-const RESERVED: &[&str] = &["require", "parallel", "__dirname", "__filename", "messenger"];
+const RESERVED: &[&str] = &[
+    "require",
+    "parallel",
+    "frominclude",
+    "__dirname",
+    "__filename",
+    "messenger",
+];
 
 const LUAU_KEYWORDS: &[&str] = &[
     "and", "break", "do", "else", "elseif", "end", "false", "for", "function", "if", "in", "local",
@@ -69,6 +77,13 @@ pub fn parse(source: &str) -> Directives {
                             push_unique(&mut d.injects, it);
                         }
                     }
+                    "includestring" => {
+                        for (key, spec) in parse_include_strings(args) {
+                            if !d.include_strings.iter().any(|(k, _)| *k == key) {
+                                d.include_strings.push((key, spec));
+                            }
+                        }
+                    }
                     _ => {}
                 }
             }
@@ -129,6 +144,84 @@ fn push_unique(v: &mut Vec<String>, item: String) {
     }
 }
 
+fn parse_include_strings(args: &str) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    for entry in split_top_level(args) {
+        let entry = entry.trim();
+        if entry.is_empty() {
+            continue;
+        }
+        let (key, spec) = match top_level_colon(entry) {
+            Some(i) => (unquote(entry[..i].trim()), unquote(entry[i + 1..].trim())),
+            None => {
+                let spec = unquote(entry);
+                (spec.clone(), spec)
+            }
+        };
+        if !key.is_empty() && !spec.is_empty() {
+            out.push((key, spec));
+        }
+    }
+    out
+}
+
+fn top_level_colon(s: &str) -> Option<usize> {
+    let mut quote: Option<char> = None;
+    for (i, c) in s.char_indices() {
+        match quote {
+            Some(q) => {
+                if c == q {
+                    quote = None;
+                }
+            }
+            None => match c {
+                '"' | '\'' => quote = Some(c),
+                ':' => return Some(i),
+                _ => {}
+            },
+        }
+    }
+    None
+}
+
+fn split_top_level(s: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut cur = String::new();
+    let mut quote: Option<char> = None;
+    for c in s.chars() {
+        match quote {
+            Some(q) => {
+                cur.push(c);
+                if c == q {
+                    quote = None;
+                }
+            }
+            None => match c {
+                '"' | '\'' => {
+                    quote = Some(c);
+                    cur.push(c);
+                }
+                ',' => out.push(std::mem::take(&mut cur)),
+                _ => cur.push(c),
+            },
+        }
+    }
+    if !cur.trim().is_empty() {
+        out.push(cur);
+    }
+    out
+}
+
+fn unquote(s: &str) -> String {
+    let s = s.trim();
+    let b = s.as_bytes();
+    if b.len() >= 2 && (b[0] == b'"' || b[0] == b'\'') && b[b.len() - 1] == b[0] {
+        s[1..s.len() - 1].to_string()
+    } else {
+        s.to_string()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -139,6 +232,52 @@ mod tests {
         let d = parse(src);
         assert_eq!(d.includes, vec!["fs", "os"]);
         assert_eq!(d.injects, vec!["math.dll"]);
+    }
+
+    #[test]
+    fn parses_include_strings() {
+        let src = "--#includestring[Config: \"./config.json\", Readme: \"@self/README.md\"]\nlocal x = 1";
+        let d = parse(src);
+        assert_eq!(
+            d.include_strings,
+            vec![
+                ("Config".to_string(), "./config.json".to_string()),
+                ("Readme".to_string(), "@self/README.md".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn include_string_key_defaults_to_path() {
+        let d = parse("--#includestring[\"./data.txt\"]");
+        assert_eq!(
+            d.include_strings,
+            vec![("./data.txt".to_string(), "./data.txt".to_string())]
+        );
+    }
+
+    #[test]
+    fn include_string_ignores_colons_inside_quotes() {
+        let d = parse("--#includestring[\"./odd:name.txt\", Log: './a:b.txt']");
+        assert_eq!(
+            d.include_strings,
+            vec![
+                ("./odd:name.txt".to_string(), "./odd:name.txt".to_string()),
+                ("Log".to_string(), "./a:b.txt".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn include_string_dedupes_first_key_wins() {
+        let d = parse("--#includestring[A: \"./x\"]\n--#includestring[A: \"./y\", B: \"./z\"]");
+        assert_eq!(
+            d.include_strings,
+            vec![
+                ("A".to_string(), "./x".to_string()),
+                ("B".to_string(), "./z".to_string()),
+            ]
+        );
     }
 
     #[test]

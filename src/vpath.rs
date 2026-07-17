@@ -40,6 +40,22 @@ pub fn dirname(id: &str) -> String {
     }
 }
 
+pub fn resolve_include(module_id: &str, spec: &str) -> String {
+    let spec = spec.trim();
+    let rel = match spec.strip_prefix("@self") {
+        Some(rest) => {
+            let rest = rest.trim_start_matches('/');
+            if rest.is_empty() {
+                String::from(".")
+            } else {
+                rest.to_string()
+            }
+        }
+        None => spec.to_string(),
+    };
+    join(&dirname(module_id), &rel)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -33,18 +33,28 @@ pub struct Bundle {
     pub files: BTreeMap<String, String>,
     #[serde(default)]
     pub dlls_b64: BTreeMap<String, String>,
+    #[serde(default)]
+    pub strings_b64: BTreeMap<String, String>,
 }
 
 impl Bundle {
     pub fn dll_bytes(&self) -> BTreeMap<String, Vec<u8>> {
-        let mut out = BTreeMap::new();
-        for (id, b64) in &self.dlls_b64 {
-            if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(b64) {
-                out.insert(id.clone(), bytes);
-            }
-        }
-        out
+        decode_b64_map(&self.dlls_b64)
     }
+
+    pub fn string_bytes(&self) -> BTreeMap<String, Vec<u8>> {
+        decode_b64_map(&self.strings_b64)
+    }
+}
+
+fn decode_b64_map(src: &BTreeMap<String, String>) -> BTreeMap<String, Vec<u8>> {
+    let mut out = BTreeMap::new();
+    for (id, b64) in src {
+        if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(b64) {
+            out.insert(id.clone(), bytes);
+        }
+    }
+    out
 }
 
 pub struct BuildReport {
@@ -75,6 +85,7 @@ pub fn build_bundle(
 
     let mut files: BTreeMap<String, String> = BTreeMap::new();
     let mut dlls_b64: BTreeMap<String, String> = BTreeMap::new();
+    let mut strings_b64: BTreeMap<String, String> = BTreeMap::new();
     let mut includes: Vec<String> = Vec::new();
     let mut required_builtins: HashSet<String> = HashSet::new();
     let mut notes: Vec<String> = Vec::new();
@@ -116,6 +127,26 @@ pub fn build_bundle(
                 includes.push(inc.clone());
             }
         }
+        for (key, spec) in &directives.include_strings {
+            let baked = vpath::resolve_include(&id, spec);
+            if strings_b64.contains_key(&baked) {
+                continue;
+            }
+            let real = project_root.join(vpath::to_native(&baked));
+            match std::fs::read(&real) {
+                Ok(bytes) => {
+                    strings_b64.insert(
+                        baked.clone(),
+                        base64::engine::general_purpose::STANDARD.encode(&bytes),
+                    );
+                }
+                Err(e) => notes.push(format!(
+                    "in '{id}': --#includestring '{key}' -> '{spec}' could not be read ({e}); \
+                     it was not baked, the exe will look for it on disk at runtime"
+                )),
+            }
+        }
+
         for inj in &directives.injects {
             let did = dll::dll_id(&id, inj);
             if dlls_b64.contains_key(&did) {
@@ -237,6 +268,7 @@ pub fn build_bundle(
         },
         files,
         dlls_b64,
+        strings_b64,
     };
 
     Ok(BuildReport {
